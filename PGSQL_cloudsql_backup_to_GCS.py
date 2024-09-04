@@ -10,10 +10,10 @@ import logging
 from google.cloud import storage
 
 # Constants and paths
-BUCKET = "ti-sql-02"
+BUCKET = "ti-dba-prod-01"
 GCS_PATH = "Backups/Current/POSTGRESQL"
 SSL_PATH = "/ssl-certs/"
-KEY_FILE = "/root/jsonfiles/ti-ca-infrastructure-d1696a20da16.json"
+KEY_FILE = "/root/jsonfiles/ti-dba-prod-01.json"
 EMAIL_SCRIPT_PATH = "/backup/scripts/POSTGRESQL_backup_error_notif.py"
 
 # Define the path for the database credentials and load them
