@@ -25,7 +25,7 @@ config.read(CREDENTIALS_PATH)
 DB_USR = config['credentials']['DB_USR']
 DB_PWD = config['credentials']['DB_PWD']
 
-EMAIL_SCRIPT_PATH = "/backup/scripts/test_error_backup_email.py"
+UPDATED_EMAIL_SCRIPT_PATH = "/backup/scripts/tMYSQL_backup_error_notif.py"
 
 def sanitize_command(command):
     """Sanitize the command by replacing sensitive information."""
@@ -49,7 +49,7 @@ def send_error_email():
     body = '<br>'.join(error_lines)
 
     command = [
-        "python3", EMAIL_SCRIPT_PATH, subject, body
+        "python3", UPDATED_EMAIL_SCRIPT_PATH, subject, body
     ]
     try:
         subprocess.run(command, check=True)
