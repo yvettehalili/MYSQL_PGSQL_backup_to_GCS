@@ -3,11 +3,11 @@ import io
 from google.cloud import storage
 
 # Backup and log path
-BUCKET = "ti-sql-02"
+BUCKET = "ti-dba-prod-01"
 GCS_PATH = "Backups/Current/MYSQL"
 SSL_PATH = "/ssl-certs/"
 SERVERS_LIST = "/backup/configs/MYSQL_servers_list.conf"
-KEY_FILE = "/root/jsonfiles/ti-ca-infrastructure-d1696a20da16.json"
+KEY_FILE = "/root/jsonfiles/ti-dba-prod-01.json"
 
 # Define the path for the database credentials
 CREDENTIALS_PATH = "/backup/configs/db_credentials.conf"
@@ -25,7 +25,7 @@ config.read(CREDENTIALS_PATH)
 DB_USR = config['credentials']['DB_USR']
 DB_PWD = config['credentials']['DB_PWD']
 
-UPDATED_EMAIL_SCRIPT_PATH = "/backup/scripts/tMYSQL_backup_error_notif.py"
+UPDATED_EMAIL_SCRIPT_PATH = "/backup/scripts/MYSQL_backup_error_notif.py"
 
 def sanitize_command(command):
     """Sanitize the command by replacing sensitive information."""
