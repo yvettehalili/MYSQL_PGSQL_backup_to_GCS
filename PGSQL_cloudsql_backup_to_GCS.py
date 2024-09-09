@@ -1,5 +1,3 @@
-#!/usr/bin/python3.5
-
 import os
 import subprocess
 import datetime
@@ -26,24 +24,18 @@ DB_PWD = config['credentials']['DB_PWD']
 # Set environment variable for PostgreSQL password
 os.environ["PGPASSWORD"] = DB_PWD
 
-# Log file path
-LOG_FILE_BASE_PATH = "/backup/logs/PGSQL_backup_activity"
-CURRENT_DATE = datetime.datetime.now().strftime("%Y-%m-%d")
-LOG_FILE_PATH = "{}_{}.log".format(LOG_FILE_BASE_PATH, CURRENT_DATE)
+# Logging Configuration
+log_path = "/backup/logs/"
+os.makedirs(log_path, exist_ok=True)
+current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+log_filename = os.path.join(log_path, "PGSQL_backup_activity_{}.log".format(current_date))
+logging.basicConfig(filename=log_filename, level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
 # Specific database roles
 DB_ROLES = {
     "db_datti": "GenBackupUser",
     "db_gtt_historic_data": "GenBackupUser"
 }
-
-# Initialize logging
-logging.basicConfig(
-    filename=LOG_FILE_PATH,
-    level=logging.INFO,
-    format='%(asctime)s %(levellevel_name)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
 
 def sanitize_command(command):
     """Sanitize the command by replacing sensitive information."""
@@ -58,7 +50,7 @@ def send_error_email():
     error_lines = []
 
     # Read the log file and capture lines containing "ERROR"
-    with open(LOG_FILE_PATH) as log_file:
+    with open(log_filename) as log_file:
         for line in log_file:
             if "ERROR" in line:
                 error_lines.append(line.strip())
@@ -77,7 +69,7 @@ def send_error_email():
 def log_to_file(message):
     """Write messages to the log file with a timestamp."""
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(LOG_FILE_PATH, "a") as log_file:
+    with open(log_filename, "a") as log_file:
         log_file.write("{}: {}\n".format(timestamp, message))
 
 def run_command(command, env=None):
@@ -148,7 +140,7 @@ def main():
     server_config = configparser.ConfigParser()
     server_config.read('/backup/configs/PGSQL_servers_list.conf')
 
-    log_to_file("================================== {} =============================================".format(CURRENT_DATE))
+    log_to_file("================================== {} =============================================".format(current_date))
 
     # Read server configurations into a list of tuples
     servers = []
@@ -216,7 +208,7 @@ def main():
                         "-Fc"
                     ]
 
-                gcs_path = "{}/{}/{}_{}.dump".format(GCS_PATH, SERVER, CURRENT_DATE, DB)
+                gcs_path = "{}/{}/{}_{}.dump".format(GCS_PATH, SERVER, current_date, DB)
                 if stream_database_to_gcs(pg_dump_command, gcs_path, DB):
                     log_to_file("Successfully backed up and streamed {} from server {} to GCS".format(DB, SERVER))
                 else:
