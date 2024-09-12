@@ -169,12 +169,13 @@ def main():
 
         try:
             log_to_file("Running database listing command: {}".format(dbs_command))
-            dbs_output = subprocess.check_output(dbs_command, shell=True, env=os.environ).decode().splitlines()
+            dbs_output = subprocess.check_output(dbs_command, shell=True, env=os.environ, stderr=subprocess.STDOUT).decode().splitlines()
             dbs_output = [db.strip() for db in dbs_output if db.strip()]
             log_to_file("Successfully fetched databases from server {}: {}".format(SERVER, dbs_output))
 
         except subprocess.CalledProcessError as e:
-            log_to_file("Error fetching databases from server {}: {}\n{}".format(SERVER, e, e.output.decode()))
+            error_output = e.output.decode()  # Capture and decode the error output
+            log_to_file("Error fetching databases from server {}: {}\n{}".format(SERVER, e, error_output))
             send_error_email()
             continue
 
