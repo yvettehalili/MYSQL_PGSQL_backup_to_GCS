@@ -158,8 +158,7 @@ def main():
         log_to_file("DUMPING SERVER: {}".format(SERVER))
 
         if SSL == 'n':
-            dbs_command = ("psql -h {} -U {} -d postgres -t -c \"SELECT datname FROM pg_database WHERE datistemplate = false;\""
-                            ).format(DB_HOST, DB_USR)
+            dbs_command = f"""psql -h {DB_HOST} -U {DB_USR} -d postgres -t -c "SELECT datname FROM pg_database WHERE datistemplate = false;" """
         else:
             dbs_command = (
                 "psql \"sslmode=verify-ca sslrootcert={}{}{} sslcert={}{}{} sslkey={}{}{} hostaddr={} user={} dbname=postgres\" "
