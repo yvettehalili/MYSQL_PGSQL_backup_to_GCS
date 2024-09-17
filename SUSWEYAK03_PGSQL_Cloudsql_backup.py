@@ -2,7 +2,6 @@ import os
 import subprocess
 import datetime
 import configparser
-import io
 import time
 import logging
 from google.cloud import storage
@@ -86,15 +85,13 @@ def stream_database_to_gcs(dump_command, gcs_path, db):
         blob = bucket.blob(gcs_path)
 
         logging.info("Starting GCS upload process")
-        with io.BytesIO() as memfile:
+
+        with blob.open("wb") as f:
             while True:
                 chunk = dump_proc.stdout.read(4096)
                 if not chunk:
                     break
-                memfile.write(chunk)
-
-            memfile.seek(0)
-            blob.upload_from_file(memfile, content_type='application/octet-stream')
+                f.write(chunk)
 
         stderr_output = dump_proc.stderr.read().decode('utf-8')
         dump_proc.wait()
