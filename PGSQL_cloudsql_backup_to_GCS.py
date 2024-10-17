@@ -218,7 +218,7 @@ def main():
                 else:
                     log_to_file("Failed to backup and stream {} from server {}".format(DB, SERVER))
                     send_error_email()
-
+                    
     logging.info("==== Backup Process Completed ====")
     logging.info("============================================================================================")
 
