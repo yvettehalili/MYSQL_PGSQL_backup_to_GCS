@@ -11,7 +11,6 @@ DB_NAME = "db_legacy_maintenance"
 
 # Configure logging
 current_date = datetime.now().strftime("%Y-%m-%d")
-# Adjusted the log path to reflect the typical structure
 log_filename = "/backup/logs/{}_daily_log_report.log".format(current_date)
 
 # Ensure the log directory exists
@@ -27,6 +26,7 @@ conn = mysql.connector.connect(
     host='localhost',  # Change this to the appropriate host if different
     database=DB_NAME
 )
+
 cursor = conn.cursor()
 
 # Get yesterday's date
@@ -64,9 +64,14 @@ SELECT @rownum := @rownum + 1 AS No, ldb_server AS Server,
 FROM lgm_daily_backup b
 JOIN lgm_servers s ON s.srv_name = b.ldb_server, 
      (SELECT @rownum := 0) r
-WHERE s.srv_active = '1'
+WHERE s.srv_active = b'1'
 AND ldb_date = DATE_SUB(CAST(NOW() AS DATE), INTERVAL 1 DAY)
 ORDER BY s.srv_type DESC;
+"""
+
+# Define update queries to set servers as inactive
+update_inactive_query = """
+UPDATE lgm_servers SET srv_active = b'0' WHERE srv_name IN ('SGTPRCOW01', 'SGTPRCOW02');
 """
 
 try:
@@ -109,6 +114,12 @@ try:
 
     else:
         logging.info("No records fetched from the query.")
+
+    # Execute the update query to set servers as inactive
+    logging.info("Executing update query for inactive servers.")
+    cursor.execute(update_inactive_query)
+    conn.commit()
+    logging.info("Inactive servers updated successfully.")
 
 except Exception as e:
     logging.error("Error: {}".format(e))
