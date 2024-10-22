@@ -1,5 +1,5 @@
 import mysql.connector
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
 import logging
 import os
@@ -11,11 +11,11 @@ DB_NAME = "db_legacy_maintenance"
 
 # Configure logging
 current_date = datetime.now().strftime("%Y-%m-%d")
-log_filename = "/logs/{}_daily_log_report.log".format(current_date)
+log_filename = "/backup/logs/{}_daily_log_report.log".format(current_date)
 
 # Ensure the log directory exists
-if not os.path.exists("/logs"):
-    os.makedirs("/logs")
+if not os.path.exists("/backup/logs"):
+    os.makedirs("/backup/logs")
 
 logging.basicConfig(filename=log_filename, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -28,7 +28,10 @@ conn = mysql.connector.connect(
 )
 cursor = conn.cursor()
 
-# Define the query (this should be your specific query)
+# Get yesterday's date
+yesterday_date = (datetime.now() - timedelta(1)).strftime('%Y-%m-%d')
+
+# Define the query to fetch yesterday's data
 query = """
 SELECT @rownum := @rownum + 1 AS No, ldb_server as Server, 
        (CASE 
@@ -60,13 +63,16 @@ SELECT @rownum := @rownum + 1 AS No, ldb_server as Server,
 FROM lgm_daily_backup b
 JOIN lgm_servers s ON s.srv_name = b.ldb_server, 
      (SELECT @rownum := 0) r
-WHERE ldb_date = CAST(NOW() AS DATE) 
+WHERE ldb_date = DATE_SUB(CAST(NOW() AS DATE), INTERVAL 1 DAY)
       AND s.srv_type='MYSQL' 
       AND srv_location='GCP'
 ORDER BY s.srv_type DESC;
 """
 
 try:
+    # Log the query being executed
+    logging.info("Executing query: {}".format(query))
+
     # Execute the query
     cursor.execute(query)
 
@@ -76,38 +82,33 @@ try:
     # Fetch data
     data = cursor.fetchall()
 
-    # Create a DataFrame from the fetched data
-    df = pd.DataFrame(data, columns=columns)
+    if data:
+        logging.info("Fetched {} records from the query.".format(len(data)))
+        
+        # Create a DataFrame from the fetched data
+        df = pd.DataFrame(data, columns=columns)
 
-    # Log the number of records fetched
-    logging.info("Fetched {} records from the query.".format(len(df)))
+        # Insert data into the monthly_report table
+        for index, row in df.iterrows():
+            insert_row_query = """
+            INSERT INTO monthly_report (`No`, `Server`, `size`, `size_name`, `Location`, `DB_engine`, `OS`, `Error`)
+            VALUES ({}, '{}', {}, '{}', '{}', '{}', '{}', '{}');
+            """.format(row['No'], row['Server'], row['size'], row['size_name'], row['Location'], row['DB_engine'], row['OS'], row['Error'])
 
-    # Insert data into the monthly_report table
-    for index, row in df.iterrows():
-        insert_row_query = """
-        INSERT INTO monthly_report (`No`, `Server`, `size`, `size_name`, `Location`, `DB_engine`, `OS`, `Error`)
-        VALUES ({}, '{}', {}, '{}', '{}', '{}', '{}', '{}');
-        """.format(row['No'], row['Server'], row['size'], row['size_name'], row['Location'], row['DB_engine'], row['OS'], row['Error'])
+            # Log each insert statement
+            logging.info("Executing query: {}".format(insert_row_query))
 
-        # Log each insert statement
-        logging.info("Executing query: {}".format(insert_row_query))
+            try:
+                cursor.execute(insert_row_query)
+            except Exception as e:
+                logging.error("Error inserting row {}: {}".format(index + 1, e))
 
-        try:
-            cursor.execute(insert_row_query)
-        except Exception as e:
-            logging.error("Error inserting row {}: {}".format(index + 1, e))
+        # Commit the transaction
+        conn.commit()
+        logging.info("All records inserted successfully and committed.")
 
-    # Commit the transaction
-    conn.commit()
-    logging.info("All records inserted successfully and committed.")
-
-    # Optionally, save DataFrame to a CSV file for monthly reporting
-    current_month = datetime.now().strftime("%Y-%m")
-    backup_file = "backup_report_{}.csv".format(current_month)
-    df.to_csv(backup_file, index=False)
-
-    print("Monthly backup report saved to {}".format(backup_file))
-    logging.info("Monthly backup report saved to {}".format(backup_file))
+    else:
+        logging.info("No records fetched from the query.")
 
 except Exception as e:
     logging.error("Error: {}".format(e))
