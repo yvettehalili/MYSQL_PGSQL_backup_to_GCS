@@ -11,6 +11,7 @@ DB_NAME = "db_legacy_maintenance"
 
 # Configure logging
 current_date = datetime.now().strftime("%Y-%m-%d")
+# Adjusted the log path to reflect the typical structure
 log_filename = "/backup/logs/{}_daily_log_report.log".format(current_date)
 
 # Ensure the log directory exists
@@ -31,9 +32,9 @@ cursor = conn.cursor()
 # Get yesterday's date
 yesterday_date = (datetime.now() - timedelta(1)).strftime('%Y-%m-%d')
 
-# Define the query to fetch yesterday's data
+# Define the query to fetch active servers and related backup data from yesterday
 query = """
-SELECT @rownum := @rownum + 1 AS No, ldb_server as Server, 
+SELECT @rownum := @rownum + 1 AS No, ldb_server AS Server, 
        (CASE 
             WHEN (TRUNCATE((ldb_size_byte / 1024), 0) > 0) 
             THEN (CASE 
@@ -52,20 +53,19 @@ SELECT @rownum := @rownum + 1 AS No, ldb_server as Server,
                   END) 
             ELSE 'B'
         END) AS size_name, 
-       s.srv_location Location, 
-       s.srv_type DB_engine,
-       s.srv_os OS,
+       s.srv_location AS Location, 
+       s.srv_type AS DB_engine,
+       s.srv_os AS OS,
        CASE 
            WHEN ldb_size_byte > 0 
            THEN 'No' 
            ELSE 'Yes' 
-       END as Error
+       END AS Error
 FROM lgm_daily_backup b
 JOIN lgm_servers s ON s.srv_name = b.ldb_server, 
      (SELECT @rownum := 0) r
-WHERE ldb_date = DATE_SUB(CAST(NOW() AS DATE), INTERVAL 1 DAY)
-      AND s.srv_type='MYSQL' 
-      AND srv_location='GCP'
+WHERE s.srv_active = '1'
+AND ldb_date = DATE_SUB(CAST(NOW() AS DATE), INTERVAL 1 DAY)
 ORDER BY s.srv_type DESC;
 """
 
