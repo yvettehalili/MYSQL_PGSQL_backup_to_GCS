@@ -11,11 +11,11 @@ DB_NAME = "db_legacy_maintenance"
 
 # Configure logging
 current_date = datetime.now().strftime("%Y-%m-%d")
-log_filename = "backup/logs/{}_daily_log_report.log".format(current_date)
+log_filename = "/logs/{}_daily_log_report.log".format(current_date)
 
 # Ensure the log directory exists
-if not os.path.exists("/backup/logs"):
-    os.makedirs("/backup/logs")
+if not os.path.exists("/logs"):
+    os.makedirs("/logs")
 
 logging.basicConfig(filename=log_filename, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -79,6 +79,9 @@ try:
     # Create a DataFrame from the fetched data
     df = pd.DataFrame(data, columns=columns)
 
+    # Log the number of records fetched
+    logging.info("Fetched {} records from the query.".format(len(df)))
+
     # Insert data into the monthly_report table
     for index, row in df.iterrows():
         insert_row_query = """
@@ -86,13 +89,17 @@ try:
         VALUES ({}, '{}', {}, '{}', '{}', '{}', '{}', '{}');
         """.format(row['No'], row['Server'], row['size'], row['size_name'], row['Location'], row['DB_engine'], row['OS'], row['Error'])
 
+        # Log each insert statement
+        logging.info("Executing query: {}".format(insert_row_query))
+
         try:
             cursor.execute(insert_row_query)
-            logging.info("Inserted row {}: {}".format(index + 1, insert_row_query))
         except Exception as e:
             logging.error("Error inserting row {}: {}".format(index + 1, e))
 
+    # Commit the transaction
     conn.commit()
+    logging.info("All records inserted successfully and committed.")
 
     # Optionally, save DataFrame to a CSV file for monthly reporting
     current_month = datetime.now().strftime("%Y-%m")
