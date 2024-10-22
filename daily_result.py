@@ -11,7 +11,7 @@ DB_NAME = "db_legacy_maintenance"
 
 # Configure logging
 current_date = datetime.now().strftime("%Y-%m-%d")
-log_filename = "/logs/{}_daily_log_report.log".format(current_date)
+log_filename = "backup/logs/{}_daily_log_report.log".format(current_date)
 
 # Ensure the log directory exists
 if not os.path.exists("/backup/logs"):
