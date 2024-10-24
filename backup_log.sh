@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Ensure required commands are available
+command -v gcsfuse >/dev/null 2>&1 || { echo >&2 "gcsfuse command not found. Please install gcsfuse."; exit 1; }
+command -v fusermount >/dev/null 2>&1 || { echo >&2 "fusermount command not found. Please install fuse."; exit 1; }
+
 # Database Credentials
 DB_USER=trtel.backup
 DB_PASS='Telus2017#'
@@ -348,7 +352,7 @@ do
     fsize=0
     tfsize=0
     
-    mysql --defaults-group-suffix=bk $DB_MAINTENANCE -e "${IQUERY}"
+    mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "${IQUERY}"
     
     while read line; do
         fsize=$(du -sb $line | awk '{print $1}')
@@ -356,10 +360,6 @@ do
         tfsize=$(($fsize + $tfsize))
         SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath) VALUES ('$CUR_DATE','$SERVER','$file',$fsize,'$line')"
         SQUERY+=" ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize, state = CASE WHEN $fsize > 0 THEN 'Completed' ELSE 'Error' END;"
-        mysql --defaults-group-suffix=bk $DB_MAINTENANCE -e "${SQUERY}"
+        mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "${SQUERY}"
     done < $value
-done < <(mysql --defaults-group-suffix=bk ${DB_MAINTENANCE} --batch -se "${query}")
-
-fusermount -uz $STORAGE
-
-printf "done"
+done < <(mysql -u
