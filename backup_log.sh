@@ -52,7 +52,6 @@ do
     echo "============================================================================================================"
     echo "Checking backups for SERVER: $SERVER on DATE: $CUR_DATE"
 
-    CHECK=0
     BACKUP_PATH=""
 
     case "$TYPE" in
@@ -72,16 +71,16 @@ do
     esac
 
     if [ -n "$BACKUP_PATH" ]; then
-        SIZE=$(gsutil du -s gs://$BUCKET/$BACKUP_PATH*${CUR_DATE}* | awk '{print $1}')
-        if [[ $SIZE != *[!\ ]* ]] || [ "$SIZE" -eq 0 ]; then
-            SIZE=$(gsutil du -s gs://$BUCKET/$BACKUP_PATH*${CUR_DATE2}* | awk '{print $1}')
+        SIZE=$(gsutil du -s "gs://$BUCKET/$BACKUP_PATH*${CUR_DATE}*" | awk '{print $1}')
+        if [[ $SIZE =~ ^[[:space:]]*$ ]] || [ "$SIZE" -eq 0 ]; then
+            SIZE=$(gsutil du -s "gs://$BUCKET/$BACKUP_PATH*${CUR_DATE2}*" | awk '{print $1}')
         fi
-        if [[ $SIZE != *[!\ ]* ]] || [ "$SIZE" -eq 0 ]; then
-            SIZE=$(gsutil du -s gs://$BUCKET/$BACKUP_PATH*${CUR_DATE3}* | awk '{print $1}')
+        if [[ $SIZE =~ ^[[:space:]]*$ ]] || [ "$SIZE" -eq 0 ]; then
+            SIZE=$(gsutil du -s "gs://$BUCKET/$BACKUP_PATH*${CUR_DATE3}*" | awk '{print $1}')
         fi
     fi
 
-    if [[ $SIZE != *[!\ ]* ]]; then
+    if [[ $SIZE =~ ^[[:space:]]*$ ]]; then
         SIZE=0
     fi
 
@@ -90,17 +89,18 @@ do
     mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$IQUERY"
     
     if [ "$SIZE" -gt 0 ]; then
-        gsutil ls gs://$BUCKET/$BACKUP_PATH*${CUR_DATE}* > /backup/cronlog/$SERVER.txt 2>/dev/null
-        gsutil ls gs://$BUCKET/$BACKUP_PATH*${CUR_DATE2}* >> /backup/cronlog/$SERVER.txt 2>/dev/null
-        gsutil ls gs://$BUCKET/$BACKUP_PATH*${CUR_DATE3}* >> /backup/cronlog/$SERVER.txt 2>/dev/null
+        gsutil ls "gs://$BUCKET/$BACKUP_PATH*${CUR_DATE}*" > "/backup/cronlog/$SERVER.txt" 2>/dev/null
+        gsutil ls "gs://$BUCKET/$BACKUP_PATH*${CUR_DATE2}*" >> "/backup/cronlog/$SERVER.txt" 2>/dev/null
+        gsutil ls "gs://$BUCKET/$BACKUP_PATH*${CUR_DATE3}*" >> "/backup/cronlog/$SERVER.txt" 2>/dev/null
 
         while read -r line; do
             fsize=$(gsutil du -s "$line" | awk '{print $1}')
             file=$(basename "$line")
-            SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath) VALUES ('$CUR_DATE','$SERVER',$fsize,'$line')"
-            SQUERY+=" ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize, state=CASE WHEN $fsize > 0 THEN 'Completed' ELSE 'Error' END;"
+            SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath) 
+                    VALUES ('$CUR_DATE','$SERVER',$fsize,'$line')
+                    ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize, state=CASE WHEN $fsize > 0 THEN 'Completed' ELSE 'Error' END;"
             mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$SQUERY"
-        done < /backup/cronlog/$SERVER.txt
+        done < "/backup/cronlog/$SERVER.txt"
     fi
 done
 
