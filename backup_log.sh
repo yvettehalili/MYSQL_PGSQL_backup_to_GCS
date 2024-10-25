@@ -19,7 +19,8 @@ CUR_DATE2=$(date -d "$CUR_DATE" +"%Y%m%d")
 CUR_DATE3=$(date -d "$CUR_DATE" +"%d-%m-%Y")
 
 # SQL Query to Fetch Server Details
-query="SELECT name, ip, user, pwd, os, frecuency, save_path, location, type FROM ti_db_inventory.servers WHERE srv_active = 1 ORDER BY location, type, os"
+# Replace `active` with the correct column name if needed
+query="SELECT name, ip, user, pwd, os, frecuency, save_path, location, type FROM ti_db_inventory.servers WHERE active = 1 ORDER BY location, type, os"
 
 clear
 
