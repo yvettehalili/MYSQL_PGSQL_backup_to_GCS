@@ -19,7 +19,7 @@ CUR_DATE2=$(date -d "$CUR_DATE" +"%Y%m%d")
 CUR_DATE3=$(date -d "$CUR_DATE" +"%d-%m-%Y")
 
 # SQL Query to Fetch Server Details
-query="SELECT name, ip, user, pwd, os, frecuency, domain, save_path, location, type FROM ti_db_inventory.servers WHERE srv_active = 1 ORDER BY location, type, os"
+query="SELECT name, ip, user, pwd, os, frecuency, save_path, location, type FROM ti_db_inventory.servers WHERE srv_active = 1 ORDER BY location, type, os"
 
 clear
 
@@ -45,7 +45,7 @@ myread() {
     IFS= read -r "$1" <<< "$input"
 }
 
-mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MAINTENANCE | while IFS=$'\t' myread SERVER SERVERIP WUSER WUSERP OS FRECUENCY DOMAIN SAVEPATH LOCATION TYPE;
+mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MAINTENANCE | while IFS=$'\t' myread SERVER SERVERIP WUSER WUSERP OS FRECUENCY SAVEPATH LOCATION TYPE;
 do
     echo "============================================================================================================"
     echo "SERVER: $SERVER - $SERVERIP - $OS - $TYPE - $SAVEPATH - $LOCATION"
