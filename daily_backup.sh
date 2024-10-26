@@ -20,7 +20,7 @@ CUR_DATE3=$(date -d "$CUR_DATE" +"%d-%m-%Y")
 CUR_DATE4=$(date -d "$CUR_DATE" +"%Y%m%d_%H%M%S")
 
 # SQL Query to Fetch Server Details
-query="SELECT name, ip, user, pwd, os, frecuencia, save_path, location, type FROM ti_db_inventory.servers WHERE active=1 ORDER BY location, type, os"
+query="SELECT name, ip, user, pwd, os, save_path, location, type FROM ti_db_inventory.servers WHERE active=1 ORDER BY location, type, os"
 
 clear
 
@@ -32,7 +32,10 @@ echo "==========================================================================
 mkdir -p $STORAGE
 
 # Mount the Google Cloud bucket using gcsfuse
-gcsfuse --key-file=/root/jsonfiles/$BUCKET.json $BUCKET $STORAGE
+if ! gcsfuse --key-file=/root/jsonfiles/ti-dba-prod-01.json $BUCKET $STORAGE; then
+    echo "Error mounting gcsfuse. Please check if the key file path is correct and the JSON file exists."
+    exit 1
+fi
 
 # Function to Prevent Collapsing of Empty Fields
 myread() {
@@ -47,7 +50,7 @@ myread() {
 }
 
 # Fetch server details from the database and iterate over each server
-mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MAINTENANCE | while IFS=$'\t' myread SERVER SERVERIP WUSER WUSERP OS FRECUENCIA SAVEPATH LOCATION TYPE;
+mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MAINTENANCE | while IFS=$'\t' myread SERVER SERVERIP WUSER WUSERP OS SAVEPATH LOCATION TYPE;
 do
     echo "============================================================================================================"
     echo "SERVER: $SERVER - $SERVERIP - $OS - $TYPE - $SAVEPATH - $LOCATION"
@@ -137,6 +140,9 @@ do
 done
 
 # Unmount the cloud storage
-fusermount -uz $STORAGE
+if ! fusermount -u $STORAGE; then
+    echo "Error unmounting /root/cloudstorage"
+    exit 1
+fi
 
 printf "done\n"
