@@ -80,15 +80,13 @@ do
     SIZE=0
     DATABASE=""
 
-    # Check for files with TEST_DATE
-    FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE2}${EXTENSION}" 2>/dev/null)
+    # Check for files with TEST_DATE variants
+    FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE}*.${EXTENSION##*.}" 2>/dev/null)
     if [[ -z "$FILES" ]]; then
-        # Check for files with TEST_DATE2
-        FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE2}${EXTENSION}" 2>/dev/null)
+        FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE2}*.${EXTENSION##*.}" 2>/dev/null)
     fi
     if [[ -z "$FILES" ]]; then
-        # Check for files with TEST_DATE3
-        FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE3}${EXTENSION}" 2>/dev/null)
+        FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE3}*.${EXTENSION##*.}" 2>/dev/null)
     fi
 
     for FILE in $FILES; do
@@ -114,6 +112,12 @@ do
                 fi
                 ;;
         esac
+
+        # Insert details into the backup log
+        SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath) 
+                VALUES ('$TEST_DATE','$SERVER',$fsize,'$FILE')
+                ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize;"
+        mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$SQUERY"
     done
 
     endcopy=$(date +"%Y-%m-%d %H:%M:%S")
@@ -127,15 +131,6 @@ do
             VALUES ('$TEST_DATE', '$SERVER', '$DATABASE', $SIZE, '$STATE', '$endcopy') 
             ON DUPLICATE KEY UPDATE size=$SIZE, state='$STATE', last_update='$endcopy';"
     mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$IQUERY"
-
-    # Insert details into the backup log
-    for FILE in $FILES; do
-        fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
-        SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath) 
-                VALUES ('$TEST_DATE','$SERVER',$fsize,'$FILE')
-                ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize;"
-        mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$SQUERY"
-    done
 done
 
 # Unmount the cloud storage
