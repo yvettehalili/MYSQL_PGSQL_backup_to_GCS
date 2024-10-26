@@ -79,6 +79,7 @@ do
 
     SIZE=0
     DATABASE=""
+    FILENAMES=()
 
     # Check for files with TEST_DATE variants
     FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE}*.${EXTENSION##*.}" 2>/dev/null)
@@ -93,8 +94,9 @@ do
         fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
         SIZE=$((SIZE + fsize))
 
-        # Extract database name from the file name based on the type
+        # Extract database name and filename from the full file path
         FILENAME=$(basename "$FILE")
+        FILENAMES+=("$FILENAME")
         case "$TYPE" in
             MYSQL)
                 if [[ "$FILENAME" =~ ^(${TEST_DATE}|${TEST_DATE2}|${TEST_DATE3})_(.*)\.sql\.gz$ ]]; then
@@ -114,8 +116,8 @@ do
         esac
 
         # Insert details into the backup log
-        SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath) 
-                VALUES ('$TEST_DATE','$SERVER',$fsize,'$FILE')
+        SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath, last_update) 
+                VALUES ('$TEST_DATE','$SERVER',$fsize,'$FILE', NOW())
                 ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize;"
         mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$SQUERY"
     done
@@ -127,10 +129,12 @@ do
     fi
 
     # Insert or update the daily log with the backup status
-    IQUERY="INSERT INTO daily_log (backup_date, server, \`database\`, size, state, last_update) 
-            VALUES ('$TEST_DATE', '$SERVER', '$DATABASE', $SIZE, '$STATE', '$endcopy') 
-            ON DUPLICATE KEY UPDATE size=$SIZE, state='$STATE', last_update='$endcopy';"
-    mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$IQUERY"
+    for FILENAME in "${FILENAMES[@]}"; do
+        IQUERY="INSERT INTO daily_log (backup_date, server, \`database\`, size, state, last_update, fileName) 
+                VALUES ('$TEST_DATE', '$SERVER', '$DATABASE', $SIZE, '$STATE', '$endcopy', '$FILENAME') 
+                ON DUPLICATE KEY UPDATE size=$SIZE, state='$STATE', last_update='$endcopy', fileName='$FILENAME';"
+        mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$IQUERY"
+    done
 done
 
 # Unmount the cloud storage
