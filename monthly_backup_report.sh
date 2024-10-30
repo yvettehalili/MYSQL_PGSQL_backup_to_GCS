@@ -13,7 +13,7 @@ CUR_MONTH=$(date +"%Y-%m")
 BACKUP_DIR="/backup"
 ACTIVE_SERVERS_FILE="${BACKUP_DIR}/active_servers.txt"
 BACKUP_LOGS_FILE="${BACKUP_DIR}/backup_logs.txt"
-REPORT_OUTPUT="${BACKUP_DIR}/monthly_backup_report.html"
+REPORT_OUTPUT="${BACKUP_DIR}/${CUR_MONTH}_backup_report.html"
 
 # SQL Queries
 ACTIVE_SERVERS_QUERY="SELECT srv_name, srv_os, srv_frecuency, srv_location, srv_type FROM lgm_servers WHERE srv_active = 1;"
@@ -23,8 +23,16 @@ BACKUP_LOGS_QUERY="SELECT lbl_date, lbl_server, lbl_size_byte, lbl_filename FROM
 mysql -u$DB_USER -p$DB_PASS -e "$ACTIVE_SERVERS_QUERY" $DB_NAME > $ACTIVE_SERVERS_FILE
 mysql -u$DB_USER -p$DB_PASS -e "$BACKUP_LOGS_QUERY" $DB_NAME > $BACKUP_LOGS_FILE
 
+# Initialize data aggregation variables
+data_growth=""
+backup_frequency=""
+error_rate=""
+successful_count=0
+failed_count=0
+week_counts=()
+
 # Initialize HTML report content
-HTML_REPORT="
+HTML_HEAD="
 <!DOCTYPE html>
 <html lang='en'>
 <head>
@@ -65,12 +73,114 @@ HTML_REPORT="
         tr:hover {
             background-color: #e1e1e1;
         }
+        .chart-container {
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+        }
+        .chart {
+            width: 45%;
+            min-width: 300px;
+            height: 400px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 10px;
+        }
     </style>
+    <script type='text/javascript' src='https://www.gstatic.com/charts/loader.js'></script>
+    <script type='text/javascript'>
+        google.charts.load('current', {'packages':['corechart']});
+        google.charts.setOnLoadCallback(drawCharts);
+
+        function drawCharts() {
+            drawBackupStatusOverviewChart();
+            drawDataGrowthOverTimeChart();
+            drawBackupFrequencyChart();
+            drawErrorRateChart();
+        }
+
+        function drawBackupStatusOverviewChart() {
+            var data = google.visualization.arrayToDataTable([
+                ['Status', 'Count'],
+                ['Successful', $successful_count],
+                ['Failed', $failed_count]
+            ]);
+            var options = {
+                title: 'Backup Status Overview',
+                colors: ['#4B286D', '#E74C3C'], /* Purple for successful, red for failed */
+                backgroundColor: '#ffffff',
+                titleTextStyle: { color: '#6C77A1' }
+            };
+            var chart = new google.visualization.PieChart(document.getElementById('backup_status_overview_chart'));
+            chart.draw(data, options);
+        }
+
+        function drawDataGrowthOverTimeChart() {
+            var data = google.visualization.arrayToDataTable([
+                ['Date', 'Data Growth'],
+                $data_growth
+            ]);
+            var options = {
+                title: 'Data Growth Over Time',
+                colors: ['#63A74A'], /* Light green for data growth */
+                backgroundColor: '#ffffff',
+                titleTextStyle: { color: '#6C77A1' },
+                hAxis: { title: 'Date', textStyle: { color: '#4B286D' } },
+                vAxis: { title: 'Size (MB)', textStyle: { color: '#4B286D' } }
+            };
+            var chart = new google.visualization.LineChart(document.getElementById('data_growth_over_time_chart'));
+            chart.draw(data, options);
+        }
+
+        function drawBackupFrequencyChart() {
+            var data = google.visualization.arrayToDataTable([
+                ['Week', 'Backups'],
+                $backup_frequency
+            ]);
+            var options = {
+                title: 'Backup Frequency',
+                colors: ['#4B286D'],
+                backgroundColor: '#ffffff',
+                titleTextStyle: { color: '#6C77A1' },
+                hAxis: { title: 'Week', textStyle: { color: '#4B286D' } },
+                vAxis: { title: 'Number of Backups', textStyle: { color: '#4B286D' } },
+                bar: { groupWidth: '75%' }
+            };
+            var chart = new google.visualization.ColumnChart(document.getElementById('backup_frequency_chart'));
+            chart.draw(data, options);
+        }
+
+        function drawErrorRateChart() {
+            var data = google.visualization.arrayToDataTable([
+                ['Date', 'Errors'],
+                $error_rate
+            ]);
+            var options = {
+                title: 'Error Rate',
+                colors: ['#E74C3C'], /* Red for errors */
+                backgroundColor: '#ffffff',
+                titleTextStyle: { color: '#6C77A1' },
+                hAxis: { title: 'Date', textStyle: { color: '#4B286D' } },
+                vAxis: { title: 'Number of Errors', textStyle: { color: '#4B286D' } },
+                isStacked: true
+            };
+            var chart = new google.visualization.ColumnChart(document.getElementById('error_rate_chart'));
+            chart.draw(data, options);
+        }
+    </script>
 </head>
 <body>
 <h1 align='center'>Monthly Backup Report - ${CUR_MONTH}</h1>
-<h2>Backup Status Overview</h2>
 <p>This report provides an overview of the backup activities for the month of ${CUR_MONTH}.</p>
+
+<div class='chart-container'>
+    <div id='backup_status_overview_chart' class='chart'></div>
+    <div id='data_growth_over_time_chart' class='chart'></div>
+    <div id='backup_frequency_chart' class='chart'></div>
+    <div id='error_rate_chart' class='chart'></div>
+</div>
 
 <table border='1'>
     <tr>
@@ -81,27 +191,35 @@ HTML_REPORT="
         <th>Location</th>
         <th>DB Engine</th>
         <th>Size (Bytes)</th>
-        <th>Date Created</th>
+        <th>Date</th>
         <th>Filename</th>
-        <th>Status</th>
+        <th>Error</th>
     </tr>"
 
-# Read data from extracted files and append to HTML report
+HTML_BODY_CONTENTS=""
+
+# Read data from extracted files and compile report data
 count=1
-successful_count=0
-failed_count=0
 
 while IFS= read -r SERVER_NAME OS FREQUENCY LOCATION TYPE; do
     grep "$SERVER_NAME" $BACKUP_LOGS_FILE | while IFS=$'\t' read -r DATE SERVER SIZE FILENAME; do
-        STATUS="Success"
-        if [ "$SIZE" == "0" ] || [ -z "$SIZE" ]; then
-            STATUS="Failed"
+        ERROR="No"
+        
+        if [[ -z "$SIZE" || "$SIZE" == "0" ]]; then
+            ERROR="Yes"
             ((failed_count++))
+            error_rate+="['$DATE', 1],"
         else
             ((successful_count++))
+            error_rate+="['$DATE', 0],"
         fi
 
-        HTML_REPORT+="<tr>
+        data_growth+="['$DATE', $SIZE],"
+        week_num=$(date -d "$DATE" +"%U")
+        [[ -z ${week_counts[$week_num]} ]] && week_counts[$week_num]=0
+        ((week_counts[$week_num]++))
+
+        HTML_BODY_CONTENTS+="<tr>
             <td>$count</td>
             <td>$SERVER_NAME</td>
             <td>$OS</td>
@@ -111,13 +229,19 @@ while IFS= read -r SERVER_NAME OS FREQUENCY LOCATION TYPE; do
             <td>$SIZE</td>
             <td>$DATE</td>
             <td>$FILENAME</td>
-            <td>$STATUS</td>
+            <td>${ERROR}</td>
         </tr>"
         ((count++))
     done
 done < <(tail -n +2 $ACTIVE_SERVERS_FILE)
 
-HTML_REPORT+="
+for week_num in "${!week_counts[@]}"; do
+    backup_frequency+="['Week $week_num', ${week_counts[$week_num]}],"
+done
+
+# Finalize the HTML report content
+HTML_REPORT="${HTML_HEAD}
+${HTML_BODY_CONTENTS}
 </table>
 <h2>Backup Summary</h2>
 <p>Successful Backups: ${successful_count}</p>
@@ -125,8 +249,15 @@ HTML_REPORT+="
 </body>
 </html>"
 
-# Save the HTML report
+# Save the HTML report to file
 echo "$HTML_REPORT" > $REPORT_OUTPUT
+
+# Notify user
+echo "Monthly backup report has been generated and saved to ${REPORT_OUTPUT}"
+"""
+
+# Save the HTML report
+echo -e "$HTML_REPORT" > $REPORT_OUTPUT
 
 # Notify user
 echo "Monthly backup report has been generated and saved to ${REPORT_OUTPUT}"
