@@ -56,7 +56,7 @@ while IFS=$'\t' read -r DATE SERVER SIZE; do
 done < "$DAILY_BACKUP_LOGS_FILE"
 
 # Prepare data for charts (converting to GB)
-storage_utilization_chart="["
+storage_utilization_chart="[['Month', 'Storage Utilization (GB)'],"
 MONTHS=("2024-01" "2024-02" "2024-03" "2024-04" "2024-05" "2024-06" "2024-07" "2024-08" "2024-09" "2024-10")
 for MONTH in "${MONTHS[@]}"; do
     STORAGE_BYTES="${storage_utilization[$MONTH]:-0}"
@@ -65,11 +65,11 @@ for MONTH in "${MONTHS[@]}"; do
     STORAGE_GB=$(echo "scale=2; $STORAGE_BYTES / 1073741824" | bc)
 
     # Debug print statements
-    echo "Debug: MONTH=$MONTH, STORAGE_BYTES=$STORAGE_BYTES, STORAGE_GB=$STORAGE_GB"
+    echo "Debug: MONTH=$MONTH, STORAGE_BYTES=${STORAGE_BYTES}, STORAGE_GB=${STORAGE_GB}"
 
     storage_utilization_chart+="['$MONTH', $STORAGE_GB],"
 done
-storage_utilization_chart=${storage_utilization_chart%?}]  # Remove last comma and close the array
+storage_utilization_chart=${storage_utilization_chart%?}"]"  # Remove the last comma and close the array
 
 # HTML and JavaScript parts
 HTML_HEAD="
@@ -133,10 +133,7 @@ HTML_HEAD="
         }
 
         function drawStorageUtilizationChart() {
-            var data = google.visualization.arrayToDataTable([
-                ['Month', 'Storage Utilization (GB)'],
-                ${storage_utilization_chart}
-            ]);
+            var data = google.visualization.arrayToDataTable(${storage_utilization_chart});
             var options = {
                 title: 'Storage Utilization (Monthly) from Jan 2024 to Oct 2024',
                 colors: ['#63A74A'],
@@ -169,4 +166,3 @@ echo "$HTML_HEAD" > "$REPORT_OUTPUT"
 
 # Notify user
 echo "Backup report has been generated and saved to ${REPORT_OUTPUT}"
-
