@@ -21,15 +21,14 @@ DAILY_BACKUP_LOGS_QUERY="SELECT ldb_date, ldb_server, ldb_size_byte FROM lgm_dai
 mysql -u$DB_USER -p$DB_PASS -e "$DAILY_BACKUP_LOGS_QUERY" $DB_NAME > $DAILY_BACKUP_LOGS_FILE
 
 # Initialize data aggregation variables
-data_growth="
-    ['Date', 'Data Growth (MB)'],"
-backup_frequency="
-    ['Week', 'Backups'],"
-error_rate="
-    ['Date', 'Errors'],"
+declare -A backup_status_overview
+declare -A data_growth_over_time
+declare -A backup_frequency
+declare -A error_rate
+
 successful_count=0
 failed_count=0
-declare -A week_counts
+total_storage=0
 
 # Ensure headers are manually removed
 tail -n +2 $DAILY_BACKUP_LOGS_FILE > temp_logs && mv temp_logs $DAILY_BACKUP_LOGS_FILE
@@ -45,30 +44,37 @@ while IFS=$'\t' read -r DATE SERVER SIZE; do
     if (( $(echo "$SIZE == 0" |bc -l) )); then
         ERROR="Yes"
         ((failed_count++))
-        error_rate+="['${DATE}', 1],"
+        error_rate[$DATE]=$((error_rate[$DATE]+1))
     else
         ((successful_count++))
-        error_rate+="['${DATE}', 0],"
+        data_growth_over_time[$DATE]=$((data_growth_over_time[$DATE]+SIZE_MB))
+        total_storage=$((total_storage + SIZE_MB))
     fi
     
-    # Append data for data_growth
-    data_growth+="['${DATE}', ${SIZE_MB}],"
-
     # Get week number to append to backup_frequency
     week_num=$(date -d "$DATE" +"%U")
-    [[ -z ${week_counts[$week_num]} ]] && week_counts[$week_num]=0
-    ((week_counts[$week_num]++))
+    backup_frequency[$week_num]=$((backup_frequency[$week_num]+1))
 
 done < $DAILY_BACKUP_LOGS_FILE
 
-for week_num in "${!week_counts[@]}"; do
-    backup_frequency+="['Week $week_num', ${week_counts[$week_num]}],"
+# Prepare data for Charts
+data_growth_chart="["
+for DATE in "${!data_growth_over_time[@]}"; do
+    data_growth_chart+="['$DATE', ${data_growth_over_time[$DATE]}],"
 done
+data_growth_chart+="]"
 
-# Finalize data arrays for Google Charts
-data_growth=${data_growth%,}
-backup_frequency=${backup_frequency%,}
-error_rate=${error_rate%,}
+backup_frequency_chart="["
+for WEEK in "${!backup_frequency[@]}"; do
+    backup_frequency_chart+="['Week $WEEK', ${backup_frequency[$WEEK]}],"
+done
+backup_frequency_chart+="]"
+
+error_rate_chart="["
+for DATE in "${!error_rate[@]}"; do
+    error_rate_chart+="['$DATE', ${error_rate[$DATE]}],"
+done
+error_rate_chart+="]"
 
 # HTML and JavaScript Parts
 HTML_HEAD="
@@ -89,29 +95,6 @@ HTML_HEAD="
         }
         h1 { color: #4B286D; }
         h2 { color: #6C77A1; }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            background-color: #fff;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-            margin-bottom: 20px;
-        }
-        th, td {
-            padding: 10px;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
-        }
-        th {
-            background-color: #4B286D;
-            color: #ffffff;
-            text-transform: uppercase;
-        }
-        tr:nth-child(even) {
-            background-color: #f9f9f9;
-        }
-        tr:hover {
-            background-color: #e1e1e1;
-        }
         .chart-container {
             display: flex;
             justify-content: space-around;
@@ -148,7 +131,7 @@ HTML_HEAD="
             ]);
             var options = {
                 title: 'Backup Status Overview',
-                colors: ['#4B286D', '#E74C3C'],
+                colors: ['#4B286D', '#63A74A'],
                 backgroundColor: '#ffffff',
                 titleTextStyle: { color: '#6C77A1' }
             };
@@ -158,7 +141,7 @@ HTML_HEAD="
 
         function drawDataGrowthOverTimeChart() {
             var data = google.visualization.arrayToDataTable([
-                ${data_growth}
+                ['Date', 'Data Growth (MB)'], ${data_growth_chart}
             ]);
             var options = {
                 title: 'Data Growth Over Time',
@@ -174,7 +157,7 @@ HTML_HEAD="
 
         function drawBackupFrequencyChart() {
             var data = google.visualization.arrayToDataTable([
-                ${backup_frequency}
+                ['Week', 'Backups'], ${backup_frequency_chart}
             ]);
             var options = {
                 title: 'Backup Frequency',
@@ -191,7 +174,7 @@ HTML_HEAD="
 
         function drawErrorRateChart() {
             var data = google.visualization.arrayToDataTable([
-                ${error_rate}
+                ['Date', 'Errors'], ${error_rate_chart}
             ]);
             var options = {
                 title: 'Error Rate',
@@ -218,44 +201,11 @@ HTML_HEAD="
     <div id='error_rate_chart' class='chart'></div>
 </div>
 
-<table border='1'>
-    <tr>
-        <th>No</th>
-        <th>Date</th>
-        <th>Server</th>
-        <th>Size (MB)</th>
-        <th>Error</th>
-    </tr>"
-
-HTML_BODY_CONTENTS=""
-
-# Parse the file again for the report table content
-count=1
-while IFS=$'\t' read -r DATE SERVER SIZE; do
-    SIZE_MB=$(echo "scale=2; $SIZE / 1048576" | bc)
-    ERROR="No"
-    if (( $(echo "$SIZE == 0" |bc -l) )); then
-        ERROR="Yes"
-    fi
-    HTML_BODY_CONTENTS+="<tr>
-        <td>${count}</td>
-        <td>${DATE}</td>
-        <td>${SERVER}</td>
-        <td>${SIZE_MB}</td>
-        <td>${ERROR}</td>
-    </tr>"
-    ((count++))
-done < $DAILY_BACKUP_LOGS_FILE
-
-# Finalize the HTML report content
-HTML_REPORT="${HTML_HEAD}
-${HTML_BODY_CONTENTS}
-</table>
 </body>
 </html>"
 
 # Save the HTML report to the file
-echo "$HTML_REPORT" > $REPORT_OUTPUT
+echo "$HTML_HEAD" > $REPORT_OUTPUT
 
 # Notify user
 echo "Monthly backup report has been generated and saved to ${REPORT_OUTPUT}"
