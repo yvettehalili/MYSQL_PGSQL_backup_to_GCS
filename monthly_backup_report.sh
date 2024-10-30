@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Database credentials
+# Database Credentials
 DB_USER="trtel.backup"
 DB_PASS="Telus2017#"
 DB_NAME="db_legacy_maintenance"
@@ -11,27 +11,66 @@ END_DATE="2024-10-31"
 
 # File paths for temporary data storage
 BACKUP_DIR="/backup"
-ACTIVE_SERVERS_FILE="${BACKUP_DIR}/active_servers.txt"
 DAILY_BACKUP_LOGS_FILE="${BACKUP_DIR}/daily_backup_logs.txt"
 REPORT_OUTPUT="${BACKUP_DIR}/october_2024_backup_report.html"
 
 # SQL Queries
-ACTIVE_SERVERS_QUERY="SELECT srv_name, srv_os, srv_frecuency, srv_location, srv_type FROM lgm_servers WHERE srv_active = 1;"
 DAILY_BACKUP_LOGS_QUERY="SELECT ldb_date, ldb_server, ldb_size_byte FROM lgm_daily_backup WHERE ldb_date BETWEEN '${START_DATE}' AND '${END_DATE}';"
 
-# Extract data to files
-mysql -u $DB_USER -p$DB_PASS -e "$ACTIVE_SERVERS_QUERY" $DB_NAME > $ACTIVE_SERVERS_FILE
-mysql -u $DB_USER -p$DB_PASS -e "$DAILY_BACKUP_LOGS_QUERY" $DB_NAME > $DAILY_BACKUP_LOGS_FILE
+# Extract data to file
+mysql -u$DB_USER -p$DB_PASS -e "$DAILY_BACKUP_LOGS_QUERY" $DB_NAME > $DAILY_BACKUP_LOGS_FILE
 
 # Initialize data aggregation variables
-data_growth=""
-backup_frequency=""
-error_rate=""
+data_growth="
+    ['Date', 'Data Growth (MB)'],"
+backup_frequency="
+    ['Week', 'Backups'],"
+error_rate="
+    ['Date', 'Errors'],"
 successful_count=0
 failed_count=0
 declare -A week_counts
 
-# Initialize HTML report content
+# Ensure headers are manually removed
+tail -n +2 $DAILY_BACKUP_LOGS_FILE > temp_logs && mv temp_logs $DAILY_BACKUP_LOGS_FILE
+
+# Iterate over each line to process data
+while IFS=$'\t' read -r DATE SERVER SIZE; do
+    ERROR="No"
+    
+    # Convert SIZE to MB
+    SIZE_MB=$(echo "scale=2; $SIZE / 1048576" | bc)
+    
+    # Check if Size is 0 to determine error
+    if (( $(echo "$SIZE == 0" |bc -l) )); then
+        ERROR="Yes"
+        ((failed_count++))
+        error_rate+="['${DATE}', 1],"
+    else
+        ((successful_count++))
+        error_rate+="['${DATE}', 0],"
+    fi
+    
+    # Append data for data_growth
+    data_growth+="['${DATE}', ${SIZE_MB}],"
+
+    # Get week number to append to backup_frequency
+    week_num=$(date -d "$DATE" +"%U")
+    [[ -z ${week_counts[$week_num]} ]] && week_counts[$week_num]=0
+    ((week_counts[$week_num]++))
+
+done < $DAILY_BACKUP_LOGS_FILE
+
+for week_num in "${!week_counts[@]}"; do
+    backup_frequency+="['Week $week_num', ${week_counts[$week_num]}],"
+done
+
+# Finalize data arrays for Google Charts
+data_growth=${data_growth%,}
+backup_frequency=${backup_frequency%,}
+error_rate=${error_rate%,}
+
+# HTML and JavaScript Parts
 HTML_HEAD="
 <!DOCTYPE html>
 <html lang='en'>
@@ -104,12 +143,12 @@ HTML_HEAD="
         function drawBackupStatusOverviewChart() {
             var data = google.visualization.arrayToDataTable([
                 ['Status', 'Count'],
-                ['Successful', $successful_count],
-                ['Failed', $failed_count]
+                ['Successful', ${successful_count}],
+                ['Failed', ${failed_count}]
             ]);
             var options = {
                 title: 'Backup Status Overview',
-                colors: ['#4B286D', '#E74C3C'], /* Purple for successful, red for failed */
+                colors: ['#4B286D', '#E74C3C'],
                 backgroundColor: '#ffffff',
                 titleTextStyle: { color: '#6C77A1' }
             };
@@ -119,12 +158,11 @@ HTML_HEAD="
 
         function drawDataGrowthOverTimeChart() {
             var data = google.visualization.arrayToDataTable([
-                ['Date', 'Data Growth'],
-                $data_growth
+                ${data_growth}
             ]);
             var options = {
                 title: 'Data Growth Over Time',
-                colors: ['#63A74A'], /* Light green for data growth */
+                colors: ['#63A74A'],
                 backgroundColor: '#ffffff',
                 titleTextStyle: { color: '#6C77A1' },
                 hAxis: { title: 'Date', textStyle: { color: '#4B286D' } },
@@ -136,8 +174,7 @@ HTML_HEAD="
 
         function drawBackupFrequencyChart() {
             var data = google.visualization.arrayToDataTable([
-                ['Week', 'Backups'],
-                $backup_frequency
+                ${backup_frequency}
             ]);
             var options = {
                 title: 'Backup Frequency',
@@ -154,12 +191,11 @@ HTML_HEAD="
 
         function drawErrorRateChart() {
             var data = google.visualization.arrayToDataTable([
-                ['Date', 'Errors'],
-                $error_rate
+                ${error_rate}
             ]);
             var options = {
                 title: 'Error Rate',
-                colors: ['#E74C3C'], /* Red for errors */
+                colors: ['#E74C3C'],
                 backgroundColor: '#ffffff',
                 titleTextStyle: { color: '#6C77A1' },
                 hAxis: { title: 'Date', textStyle: { color: '#4B286D' } },
@@ -185,59 +221,31 @@ HTML_HEAD="
 <table border='1'>
     <tr>
         <th>No</th>
-        <th>Server</th>
-        <th>OS</th>
-        <th>Frequency</th>
-        <th>Location</th>
-        <th>DB Engine</th>
-        <th>Size (Bytes)</th>
         <th>Date</th>
-        <th>Filename</th>
+        <th>Server</th>
+        <th>Size (MB)</th>
         <th>Error</th>
     </tr>"
 
 HTML_BODY_CONTENTS=""
 
-# Parse active servers
+# Parse the file again for the report table content
 count=1
-while IFS=$'\t' read -r SERVER_NAME OS FREQUENCY LOCATION TYPE; do
-    grep "$SERVER_NAME" $DAILY_BACKUP_LOGS_FILE | while IFS=$'\t' read -r DATE SERVER SIZE; do
-        ERROR="No"
-        
-        if [[ -z "$SIZE" || "$SIZE" == "0" ]]; then
-            ERROR="Yes"
-            ((failed_count++))
-            error_rate+="['$DATE', 1],"
-        else
-            ((successful_count++))
-            error_rate+="['$DATE', 0],"
-        fi
-
-        SIZE_MB=$(echo "scale=2; $SIZE / 1048576" | bc)
-        data_growth+="['$DATE', $SIZE_MB],"
-        week_num=$(date -d "$DATE" +"%U")
-        [[ -z ${week_counts[$week_num]} ]] && week_counts[$week_num]=0
-        ((week_counts[$week_num]++))
-
-        HTML_BODY_CONTENTS+="<tr>
-            <td>$count</td>
-            <td>$SERVER_NAME</td>
-            <td>$OS</td>
-            <td>$FREQUENCY</td>
-            <td>$LOCATION</td>
-            <td>$TYPE</td>
-            <td>$SIZE</td>
-            <td>$DATE</td>
-            <td>--</td>
-            <td>${ERROR}</td>
-        </tr>"
-        ((count++))
-    done
-done < <(tail -n +2 $ACTIVE_SERVERS_FILE)
-
-for week_num in "${!week_counts[@]}"; do
-    backup_frequency+="['Week $week_num', ${week_counts[$week_num]}],"
-done
+while IFS=$'\t' read -r DATE SERVER SIZE; do
+    SIZE_MB=$(echo "scale=2; $SIZE / 1048576" | bc)
+    ERROR="No"
+    if (( $(echo "$SIZE == 0" |bc -l) )); then
+        ERROR="Yes"
+    fi
+    HTML_BODY_CONTENTS+="<tr>
+        <td>${count}</td>
+        <td>${DATE}</td>
+        <td>${SERVER}</td>
+        <td>${SIZE_MB}</td>
+        <td>${ERROR}</td>
+    </tr>"
+    ((count++))
+done < $DAILY_BACKUP_LOGS_FILE
 
 # Finalize the HTML report content
 HTML_REPORT="${HTML_HEAD}
@@ -246,7 +254,7 @@ ${HTML_BODY_CONTENTS}
 </body>
 </html>"
 
-# Save the HTML report to file
+# Save the HTML report to the file
 echo "$HTML_REPORT" > $REPORT_OUTPUT
 
 # Notify user
