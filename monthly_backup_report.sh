@@ -13,18 +13,15 @@ END_DATE="2024-10-31"
 BACKUP_DIR="/backup"
 ACTIVE_SERVERS_FILE="${BACKUP_DIR}/active_servers.txt"
 DAILY_BACKUP_LOGS_FILE="${BACKUP_DIR}/daily_backup_logs.txt"
-DETAILED_BACKUP_LOGS_FILE="${BACKUP_DIR}/detailed_backup_logs.txt"
 REPORT_OUTPUT="${BACKUP_DIR}/october_2024_backup_report.html"
 
 # SQL Queries
 ACTIVE_SERVERS_QUERY="SELECT srv_name, srv_os, srv_frecuency, srv_location, srv_type FROM lgm_servers WHERE srv_active = 1;"
 DAILY_BACKUP_LOGS_QUERY="SELECT ldb_date, ldb_server, ldb_size_byte FROM lgm_daily_backup WHERE ldb_date BETWEEN '${START_DATE}' AND '${END_DATE}';"
-DETAILED_BACKUP_LOGS_QUERY="SELECT lbl_date, lbl_server, lbl_size_byte, lbl_filename FROM lgm_backups_log WHERE lbl_date BETWEEN '${START_DATE}' AND '${END_DATE}';"
 
 # Extract data to files
 mysql -u $DB_USER -p$DB_PASS -e "$ACTIVE_SERVERS_QUERY" $DB_NAME > $ACTIVE_SERVERS_FILE
 mysql -u $DB_USER -p$DB_PASS -e "$DAILY_BACKUP_LOGS_QUERY" $DB_NAME > $DAILY_BACKUP_LOGS_FILE
-mysql -u $DB_USER -p$DB_PASS -e "$DETAILED_BACKUP_LOGS_QUERY" $DB_NAME > $DETAILED_BACKUP_LOGS_FILE
 
 # Initialize data aggregation variables
 data_growth=""
@@ -246,9 +243,6 @@ done
 HTML_REPORT="${HTML_HEAD}
 ${HTML_BODY_CONTENTS}
 </table>
-<h2>Backup Summary</h2>
-<p>Successful Backups: ${successful_count}</p>
-<p>Failed Backups: ${failed_count}</p>
 </body>
 </html>"
 
