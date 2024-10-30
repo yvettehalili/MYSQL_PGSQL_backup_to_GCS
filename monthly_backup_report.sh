@@ -5,23 +5,26 @@ DB_USER="trtel.backup"
 DB_PASS="Telus2017#"
 DB_NAME="db_legacy_maintenance"
 
-# Date configurations
-CUR_DATE=$(date +"%Y-%m-%d")
-CUR_MONTH=$(date +"%Y-%m")
+# Date configurations for October 2024
+START_DATE="2024-10-01"
+END_DATE="2024-10-31"
 
-# File paths
+# File paths for temporary data storage
 BACKUP_DIR="/backup"
 ACTIVE_SERVERS_FILE="${BACKUP_DIR}/active_servers.txt"
-BACKUP_LOGS_FILE="${BACKUP_DIR}/backup_logs.txt"
-REPORT_OUTPUT="${BACKUP_DIR}/${CUR_MONTH}_backup_report.html"
+DAILY_BACKUP_LOGS_FILE="${BACKUP_DIR}/daily_backup_logs.txt"
+DETAILED_BACKUP_LOGS_FILE="${BACKUP_DIR}/detailed_backup_logs.txt"
+REPORT_OUTPUT="${BACKUP_DIR}/october_2024_backup_report.html"
 
 # SQL Queries
 ACTIVE_SERVERS_QUERY="SELECT srv_name, srv_os, srv_frecuency, srv_location, srv_type FROM lgm_servers WHERE srv_active = 1;"
-BACKUP_LOGS_QUERY="SELECT lbl_date, lbl_server, lbl_size_byte, lbl_filename FROM lgm_backups_log WHERE lbl_date LIKE '${CUR_MONTH}%';"
+DAILY_BACKUP_LOGS_QUERY="SELECT ldb_date, ldb_server, ldb_size_byte FROM lgm_daily_backup WHERE ldb_date BETWEEN '${START_DATE}' AND '${END_DATE}';"
+DETAILED_BACKUP_LOGS_QUERY="SELECT lbl_date, lbl_server, lbl_size_byte, lbl_filename FROM lgm_backups_log WHERE lbl_date BETWEEN '${START_DATE}' AND '${END_DATE}';"
 
 # Extract data to files
-mysql -u$DB_USER -p$DB_PASS -e "$ACTIVE_SERVERS_QUERY" $DB_NAME > $ACTIVE_SERVERS_FILE
-mysql -u$DB_USER -p$DB_PASS -e "$BACKUP_LOGS_QUERY" $DB_NAME > $BACKUP_LOGS_FILE
+mysql -u $DB_USER -p$DB_PASS -e "$ACTIVE_SERVERS_QUERY" $DB_NAME > $ACTIVE_SERVERS_FILE
+mysql -u $DB_USER -p$DB_PASS -e "$DAILY_BACKUP_LOGS_QUERY" $DB_NAME > $DAILY_BACKUP_LOGS_FILE
+mysql -u $DB_USER -p$DB_PASS -e "$DETAILED_BACKUP_LOGS_QUERY" $DB_NAME > $DETAILED_BACKUP_LOGS_FILE
 
 # Initialize data aggregation variables
 data_growth=""
@@ -172,8 +175,8 @@ HTML_HEAD="
     </script>
 </head>
 <body>
-<h1 align='center'>Monthly Backup Report - ${CUR_MONTH}</h1>
-<p>This report provides an overview of the backup activities for the month of ${CUR_MONTH}.</p>
+<h1 align='center'>Monthly Backup Report - October 2024</h1>
+<p>This report provides an overview of the backup activities for the month of October 2024.</p>
 
 <div class='chart-container'>
     <div id='backup_status_overview_chart' class='chart'></div>
@@ -198,11 +201,10 @@ HTML_HEAD="
 
 HTML_BODY_CONTENTS=""
 
-# Read data from extracted files and compile report data
+# Parse active servers
 count=1
-
-while IFS= read -r SERVER_NAME OS FREQUENCY LOCATION TYPE; do
-    grep "$SERVER_NAME" $BACKUP_LOGS_FILE | while IFS=$'\t' read -r DATE SERVER SIZE FILENAME; do
+while IFS=$'\t' read -r SERVER_NAME OS FREQUENCY LOCATION TYPE; do
+    grep "$SERVER_NAME" $DAILY_BACKUP_LOGS_FILE | while IFS=$'\t' read -r DATE SERVER SIZE; do
         ERROR="No"
         
         if [[ -z "$SIZE" || "$SIZE" == "0" ]]; then
@@ -214,7 +216,8 @@ while IFS= read -r SERVER_NAME OS FREQUENCY LOCATION TYPE; do
             error_rate+="['$DATE', 0],"
         fi
 
-        data_growth+="['$DATE', $SIZE],"
+        SIZE_MB=$(echo "scale=2; $SIZE / 1048576" | bc)
+        data_growth+="['$DATE', $SIZE_MB],"
         week_num=$(date -d "$DATE" +"%U")
         [[ -z ${week_counts[$week_num]} ]] && week_counts[$week_num]=0
         ((week_counts[$week_num]++))
@@ -228,7 +231,7 @@ while IFS= read -r SERVER_NAME OS FREQUENCY LOCATION TYPE; do
             <td>$TYPE</td>
             <td>$SIZE</td>
             <td>$DATE</td>
-            <td>$FILENAME</td>
+            <td>--</td>
             <td>${ERROR}</td>
         </tr>"
         ((count++))
@@ -254,4 +257,3 @@ echo "$HTML_REPORT" > $REPORT_OUTPUT
 
 # Notify user
 echo "Monthly backup report has been generated and saved to ${REPORT_OUTPUT}"
-
