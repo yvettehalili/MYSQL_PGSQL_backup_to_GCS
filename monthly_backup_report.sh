@@ -5,14 +5,14 @@ DB_USER="trtel.backup"
 DB_PASS="Telus2017#"
 DB_NAME="db_legacy_maintenance"
 
-# Date configurations for October 2024
-START_DATE="2024-10-01"
+# Date configurations for Jan 2024 - Oct 2024
+START_DATE="2024-01-01"
 END_DATE="2024-10-31"
 
 # File paths for temporary data storage
 BACKUP_DIR="/backup"
 DAILY_BACKUP_LOGS_FILE="${BACKUP_DIR}/daily_backup_logs.txt"
-REPORT_OUTPUT="${BACKUP_DIR}/october_2024_backup_report.html"
+REPORT_OUTPUT="${BACKUP_DIR}/backup_report_2024.html"
 
 # SQL Queries
 DAILY_BACKUP_LOGS_QUERY="SELECT ldb_date, ldb_server, ldb_size_byte FROM lgm_daily_backup WHERE ldb_date BETWEEN '${START_DATE}' AND '${END_DATE}';"
@@ -22,61 +22,39 @@ mysql -u$DB_USER -p$DB_PASS -e "$DAILY_BACKUP_LOGS_QUERY" $DB_NAME > $DAILY_BACK
 
 # Initialize data aggregation variables
 declare -A backup_status_overview
-declare -A data_growth_over_time
-declare -A backup_frequency
-declare -A error_rate
+declare -A storage_utilization
 
 successful_count=0
 failed_count=0
-total_storage=0
 
 # Ensure headers are manually removed
 tail -n +2 $DAILY_BACKUP_LOGS_FILE > temp_logs && mv temp_logs $DAILY_BACKUP_LOGS_FILE
 
-# Iterate over each line to process data
+# Parse and aggregate data
 while IFS=$'\t' read -r DATE SERVER SIZE; do
-    ERROR="No"
-    
-    # Convert SIZE to MB
-    SIZE_MB=$(echo "scale=2; $SIZE / 1048576" | bc)
-    
-    # Check if Size is 0 to determine error
-    if (( $(echo "$SIZE == 0" |bc -l) )); then
+    # Convert size to GB
+    SIZE_GB=$(echo "scale=2; $SIZE / 1073741824" | bc) # 1 GB = 1073741824 bytes
+    MONTH=$(date -d "$DATE" +"%Y-%m")
+
+    # Backup status overview
+    if (( $(echo "$SIZE == 0" | bc -l) )); then
         ERROR="Yes"
         ((failed_count++))
-        error_rate[$DATE]=$((error_rate[$DATE]+1))
     else
+        ERROR="No"
         ((successful_count++))
-        data_growth_over_time[$DATE]=$((data_growth_over_time[$DATE]+SIZE_MB))
-        total_storage=$((total_storage + SIZE_MB))
+        storage_utilization[$MONTH]=$(echo "scale=2; ${storage_utilization[$MONTH]} + $SIZE_GB" | bc)
     fi
-    
-    # Get week number to append to backup_frequency
-    week_num=$(date -d "$DATE" +"%U")
-    backup_frequency[$week_num]=$((backup_frequency[$week_num]+1))
-
 done < $DAILY_BACKUP_LOGS_FILE
 
-# Prepare data for Charts
-data_growth_chart="["
-for DATE in "${!data_growth_over_time[@]}"; do
-    data_growth_chart+="['$DATE', ${data_growth_over_time[$DATE]}],"
+# Prepare data for charts
+storage_utilization_chart="["
+for MONTH in "${!storage_utilization[@]}"; do
+    storage_utilization_chart+="['$MONTH', ${storage_utilization[$MONTH]}],"
 done
-data_growth_chart+="]"
+storage_utilization_chart=${storage_utilization_chart%?}]  # Remove last comma and close the array
 
-backup_frequency_chart="["
-for WEEK in "${!backup_frequency[@]}"; do
-    backup_frequency_chart+="['Week $WEEK', ${backup_frequency[$WEEK]}],"
-done
-backup_frequency_chart+="]"
-
-error_rate_chart="["
-for DATE in "${!error_rate[@]}"; do
-    error_rate_chart+="['$DATE', ${error_rate[$DATE]}],"
-done
-error_rate_chart+="]"
-
-# HTML and JavaScript Parts
+# HTML and JavaScript parts
 HTML_HEAD="
 <!DOCTYPE html>
 <html lang='en'>
@@ -118,9 +96,7 @@ HTML_HEAD="
 
         function drawCharts() {
             drawBackupStatusOverviewChart();
-            drawDataGrowthOverTimeChart();
-            drawBackupFrequencyChart();
-            drawErrorRateChart();
+            drawStorageUtilizationChart();
         }
 
         function drawBackupStatusOverviewChart() {
@@ -139,66 +115,32 @@ HTML_HEAD="
             chart.draw(data, options);
         }
 
-        function drawDataGrowthOverTimeChart() {
+        function drawStorageUtilizationChart() {
             var data = google.visualization.arrayToDataTable([
-                ['Date', 'Data Growth (MB)'], ${data_growth_chart}
+                ['Month', 'Storage Utilization (GB)'], ${storage_utilization_chart}
             ]);
             var options = {
-                title: 'Data Growth Over Time',
+                title: 'Storage Utilization (Monthly) from Jan 2024 to Oct 2024',
                 colors: ['#63A74A'],
                 backgroundColor: '#ffffff',
                 titleTextStyle: { color: '#6C77A1' },
-                hAxis: { title: 'Date', textStyle: { color: '#4B286D' } },
-                vAxis: { title: 'Size (MB)', textStyle: { color: '#4B286D' } }
+                hAxis: { title: 'Month', textStyle: { color: '#4B286D' } },
+                vAxis: { title: 'Storage Utilization (GB)', textStyle: { color: '#4B286D' } },
+                pointSize: 5,
+                curveType: 'function'
             };
-            var chart = new google.visualization.LineChart(document.getElementById('data_growth_over_time_chart'));
-            chart.draw(data, options);
-        }
-
-        function drawBackupFrequencyChart() {
-            var data = google.visualization.arrayToDataTable([
-                ['Week', 'Backups'], ${backup_frequency_chart}
-            ]);
-            var options = {
-                title: 'Backup Frequency',
-                colors: ['#4B286D'],
-                backgroundColor: '#ffffff',
-                titleTextStyle: { color: '#6C77A1' },
-                hAxis: { title: 'Week', textStyle: { color: '#4B286D' } },
-                vAxis: { title: 'Number of Backups', textStyle: { color: '#4B286D' } },
-                bar: { groupWidth: '75%' }
-            };
-            var chart = new google.visualization.ColumnChart(document.getElementById('backup_frequency_chart'));
-            chart.draw(data, options);
-        }
-
-        function drawErrorRateChart() {
-            var data = google.visualization.arrayToDataTable([
-                ['Date', 'Errors'], ${error_rate_chart}
-            ]);
-            var options = {
-                title: 'Error Rate',
-                colors: ['#E74C3C'],
-                backgroundColor: '#ffffff',
-                titleTextStyle: { color: '#6C77A1' },
-                hAxis: { title: 'Date', textStyle: { color: '#4B286D' } },
-                vAxis: { title: 'Number of Errors', textStyle: { color: '#4B286D' } },
-                isStacked: true
-            };
-            var chart = new google.visualization.ColumnChart(document.getElementById('error_rate_chart'));
+            var chart = new google.visualization.LineChart(document.getElementById('storage_utilization_chart'));
             chart.draw(data, options);
         }
     </script>
 </head>
 <body>
-<h1 align='center'>Monthly Backup Report - October 2024</h1>
-<p>This report provides an overview of the backup activities for the month of October 2024.</p>
+<h1 align='center'>Backup Report - Jan 2024 to Oct 2024</h1>
+<p>This report provides an overview of the backup activities from January 2024 to October 2024.</p>
 
 <div class='chart-container'>
     <div id='backup_status_overview_chart' class='chart'></div>
-    <div id='data_growth_over_time_chart' class='chart'></div>
-    <div id='backup_frequency_chart' class='chart'></div>
-    <div id='error_rate_chart' class='chart'></div>
+    <div id='storage_utilization_chart' class='chart'></div>
 </div>
 
 </body>
@@ -208,4 +150,4 @@ HTML_HEAD="
 echo "$HTML_HEAD" > $REPORT_OUTPUT
 
 # Notify user
-echo "Monthly backup report has been generated and saved to ${REPORT_OUTPUT}"
+echo "Backup report has been generated and saved to ${REPORT_OUTPUT}"
