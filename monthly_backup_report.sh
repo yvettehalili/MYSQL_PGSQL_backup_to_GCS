@@ -32,8 +32,16 @@ tail -n +2 $DAILY_BACKUP_LOGS_FILE > temp_logs && mv temp_logs $DAILY_BACKUP_LOG
 
 # Parse and aggregate data
 while IFS=$'\t' read -r DATE SERVER SIZE; do
-    # Convert size to GB
-    SIZE_GB=$(echo "scale=2; $SIZE / 1073741824" | bc) # 1 GB = 1073741824 bytes
+    # Convert size to GB if SIZE is not null
+    if [ -n "$SIZE" ]; then
+        SIZE_GB=$(echo "scale=2; $SIZE / 1073741824" | bc 2>/dev/null) # 1 GB = 1073741824 bytes
+        if [ $? -ne 0 ]; then
+            # If bc failed, set SIZE_GB to 0
+            SIZE_GB=0
+        fi
+    else
+        SIZE_GB=0
+    fi
     MONTH=$(date -d "$DATE" +"%Y-%m")
 
     # Backup status overview
@@ -43,14 +51,16 @@ while IFS=$'\t' read -r DATE SERVER SIZE; do
     else
         ERROR="No"
         ((successful_count++))
-        storage_utilization[$MONTH]=$(echo "scale=2; ${storage_utilization[$MONTH]} + $SIZE_GB" | bc)
+        storage_utilization[$MONTH]=$(echo "${storage_utilization[$MONTH]:-0} + $SIZE_GB" | bc 2>/dev/null)
     fi
 done < $DAILY_BACKUP_LOGS_FILE
 
 # Prepare data for charts
 storage_utilization_chart="["
-for MONTH in "${!storage_utilization[@]}"; do
-    storage_utilization_chart+="['$MONTH', ${storage_utilization[$MONTH]}],"
+MONTHS=("2024-01" "2024-02" "2024-03" "2024-04" "2024-05" "2024-06" "2024-07" "2024-08" "2024-09" "2024-10")
+for MONTH in "${MONTHS[@]}"; do
+    STORAGE_VALUE="${storage_utilization[$MONTH]:-0}"
+    storage_utilization_chart+="['$MONTH', $STORAGE_VALUE],"
 done
 storage_utilization_chart=${storage_utilization_chart%?}]  # Remove last comma and close the array
 
