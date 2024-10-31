@@ -7,7 +7,6 @@ SSL_PATH="/ssl-certs/"
 
 DB_USR="GenBackupUser"
 DB_PWD="DBB@ckuPU53r*"
-DEFAULTS_FILE="/etc/mysql/mysqldump.cnf"
 
 LDUMP_DATE=$(date +"%Y-%m-%d %H:%M:%S")
 TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
@@ -36,60 +35,75 @@ for line in "${lines[@]}"; do
 
     DB_HOST=$HOST
     printf "${TIMESTAMP}: DUMPING SERVER: ${SERVER}\n"
+    
     if [ "$SSL" != "y" ]; then
-        DB_LIST=$(mysql --defaults-extra-file=$DEFAULTS_FILE -h $DB_HOST -Bs -e "SHOW DATABASES")
+        DB_LIST=$(mysql -u"$DB_USR" -p"$DB_PWD" --default-auth=mysql_native_password -h "$DB_HOST" -Bs -e "SHOW DATABASES")
+        if [ $? -ne 0 ]; then
+            printf "Error retrieving database list for server: ${SERVER}\n" >&2
+            continue
+        fi
     else
-        DB_LIST=$(mysql --defaults-extra-file=$DEFAULTS_FILE -h $DB_HOST --ssl-ca="${SSL_PATH}${SERVER}/server-ca.pem" \
+        DB_LIST=$(mysql -u"$DB_USR" -p"$DB_PWD" --default-auth=mysql_native_password -h "$DB_HOST" \
+                   --ssl-ca="${SSL_PATH}${SERVER}/server-ca.pem" \
                    --ssl-cert="${SSL_PATH}${SERVER}/client-cert.pem" \
                    --ssl-key="${SSL_PATH}${SERVER}/client-key.pem" -Bs -e "SHOW DATABASES")
+        if [ $? -ne 0 ]; then
+            printf "Error retrieving database list for server: ${SERVER}\n" >&2
+            continue
+        fi
     fi
 
     cd "${TMP_PATH}"
-    [ ! -d "${SERVER}" ] && mkdir $SERVER
+    [ ! -d "${SERVER}" ] && mkdir -p $SERVER
     cd $SERVER
 
     for DB in $DB_LIST; do
-        if [ "$DB" != "information_schema" ] && [ "$DB" != "performance_schema" ] && [ "$DB" != "sys" ] && [ "$DB" != "mysql" ]; then
+        if [[ "$DB" != "information_schema" ]] && [[ "$DB" != "performance_schema" ]] && [[ "$DB" != "sys" ]] && [[ "$DB" != "mysql" ]]; then
             printf "Dumping DB $DB\n"
             if [ "$SSL" != "y" ]; then
-                mysqldump --defaults-extra-file=$DEFAULTS_FILE --set-gtid-purged=OFF --single-transaction --lock-tables=false --quick \
-                          --triggers --events --routines -h$DB_HOST $DB | gzip > "${CUR_DATE}_${DB}.sql.gz"
+                mysqldump -u"$DB_USR" -p"$DB_PWD" --default-auth=mysql_native_password --set-gtid-purged=OFF --single-transaction --lock-tables=false --quick \
+                          --triggers --events --routines -h"$DB_HOST" $DB | gzip > "${CUR_DATE}_${DB}.sql.gz"
             else
-                if [ "$DB" == "db_hr_osticket_us" ] || [ "$DB" == "db_hr_osticket_ph" ] || [ "$DB" == "db_osticket_workday_global" ] || [ "$SERVER" == "isdba-cloudsql-us-we1-a-08" ]; then
-                    if [ "$DAY" == "6" ] && [ "$DB" == "db_hr_osticket_ph" ]; then
-                        mysqldump --defaults-extra-file=$DEFAULTS_FILE --set-gtid-purged=OFF \
+                if [[ "$DB" == "db_hr_osticket_us" || "$DB" == "db_hr_osticket_ph" || "$DB" == "db_osticket_workday_global" || "$SERVER" == "isdba-cloudsql-us-we1-a-08" ]]; then
+                    if [[ "$DAY" == "6" && "$DB" == "db_hr_osticket_ph" ]]; then
+                        mysqldump -u"$DB_USR" -p"$DB_PWD" --default-auth=mysql_native_password --set-gtid-purged=OFF \
                                   --ssl-ca="${SSL_PATH}${SERVER}/server-ca.pem" \
                                   --ssl-cert="${SSL_PATH}${SERVER}/client-cert.pem" \
                                   --ssl-key="${SSL_PATH}${SERVER}/client-key.pem" \
                                   --single-transaction --max_allowed_packet=2147483648 --hex-blob --net_buffer_length=4096 \
-                                  --triggers --events --lock-tables=false --routines --quick -h$DB_HOST $DB | gzip > "${CUR_DATE}_${DB}.sql.gz"
+                                  --triggers --events --lock-tables=false --routines --quick -h"$DB_HOST" $DB | gzip > "${CUR_DATE}_${DB}.sql.gz"
                     else
-                        if [ "$DB" == "db_hr_osticket_ph" ]; then
-                            mysqldump --defaults-extra-file=$DEFAULTS_FILE --set-gtid-purged=OFF \
+                        if [[ "$DB" == "db_hr_osticket_ph" ]]; then
+                            mysqldump -u"$DB_USR" -p"$DB_PWD" --default-auth=mysql_native_password --set-gtid-purged=OFF \
                                       --ssl-ca="${SSL_PATH}${SERVER}/server-ca.pem" \
                                       --ssl-cert="${SSL_PATH}${SERVER}/client-cert.pem" \
                                       --ssl-key="${SSL_PATH}${SERVER}/client-key.pem" \
                                       --single-transaction --max_allowed_packet=2147483648 --hex-blob --net_buffer_length=4096 \
                                       --ignore-table=$DB.hr_file_chunk --lock-tables=false \
-                                      --triggers --events --routines --quick -h$DB_HOST $DB | gzip > "${CUR_DATE}_${DB}.sql.gz"
+                                      --triggers --events --routines --quick -h"$DB_HOST" $DB | gzip > "${CUR_DATE}_${DB}.sql.gz"
                         else
-                            mysqldump --defaults-extra-file=$DEFAULTS_FILE --set-gtid-purged=OFF \
+                            mysqldump -u"$DB_USR" -p"$DB_PWD" --default-auth=mysql_native_password --set-gtid-purged=OFF \
                                       --ssl-ca="${SSL_PATH}${SERVER}/server-ca.pem" \
                                       --ssl-cert="${SSL_PATH}${SERVER}/client-cert.pem" \
                                       --ssl-key="${SSL_PATH}${SERVER}/client-key.pem" \
                                       --single-transaction --max_allowed_packet=2147483648 --hex-blob --net_buffer_length=4096 \
                                       --lock-tables=false --quick \
-                                      --triggers --events --routines -h$DB_HOST $DB | gzip > "${CUR_DATE}_${DB}.sql.gz"
+                                      --triggers --events --routines -h"$DB_HOST" $DB | gzip > "${CUR_DATE}_${DB}.sql.gz"
                         fi
                     fi
                 else
-                    mysqldump --defaults-extra-file=$DEFAULTS_FILE --set-gtid-purged=OFF \
+                    mysqldump -u"$DB_USR" -p"$DB_PWD" --default-auth=mysql_native_password --set-gtid-purged=OFF \
                               --ssl-ca="${SSL_PATH}${SERVER}/server-ca.pem" \
                               --ssl-cert="${SSL_PATH}${SERVER}/client-cert.pem" \
                               --ssl-key="${SSL_PATH}${SERVER}/client-key.pem" \
                               --single-transaction --max_allowed_packet=2147483648 --lock-tables=false --net_buffer_length=4096 \
-                              --triggers --events --routines --quick -h$DB_HOST $DB | gzip > "${CUR_DATE}_${DB}.sql.gz"
+                              --triggers --events --routines --quick -h"$DB_HOST" $DB | gzip > "${CUR_DATE}_${DB}.sql.gz"
                 fi
+            fi
+            if [ $? -ne 0 ]; then
+                printf "Error dumping database: $DB on server: ${SERVER}\n" >&2
+            else
+                printf "Successfully dumped database: $DB on server: ${SERVER}\n"
             fi
         fi
     done
