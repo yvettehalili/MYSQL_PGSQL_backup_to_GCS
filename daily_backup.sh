@@ -13,11 +13,10 @@ DB_MAINTENANCE=ti_db_inventory
 STORAGE=/root/cloudstorage
 BUCKET=ti-dba-prod-sql-01
 
-# Current Date Variables
-CUR_DATE=$(date +"%Y-%m-%d")
-CUR_DATE2=$(date -d "$CUR_DATE" +"%Y%m%d")
-CUR_DATE3=$(date -d "$CUR_DATE" +"%d-%m-%Y")
-CUR_DATE4=$(date -d "$CUR_DATE" +"%Y%m%d_%H%M%S")
+# Fixed Date Variables for Testing (simulating "2024-10-25")
+TEST_DATE="2024-10-25"
+TEST_DATE2=$(date -d "$TEST_DATE" +"%Y%m%d")
+TEST_DATE3=$(date -d "$TEST_DATE" +"%d-%m-%Y")
 
 # SQL Query to Fetch Server Details
 query="SELECT name, ip, user, pwd, os, save_path, location, type FROM ti_db_inventory.servers WHERE active=1 ORDER BY location, type, os"
@@ -25,7 +24,7 @@ query="SELECT name, ip, user, pwd, os, save_path, location, type FROM ti_db_inve
 clear
 
 echo "============================================================================================================"
-echo "START DATE: $CUR_DATE ....................................................................................."
+echo "START DATE: $TEST_DATE ....................................................................................."
 echo "============================================================================================================"
 
 # Create the storage directory if it does not exist
@@ -55,7 +54,7 @@ do
     echo "============================================================================================================"
     echo "SERVER: $SERVER - $SERVERIP - $OS - $TYPE - $SAVEPATH - $LOCATION"
     echo "============================================================================================================"
-    echo "Checking backups for SERVER: $SERVER on DATE: $CUR_DATE"
+    echo "Checking backups for SERVER: $SERVER on DATE: $TEST_DATE"
 
     BACKUP_PATH=""
 
@@ -79,33 +78,34 @@ do
     esac
 
     SIZE=0
-    DATABASE=""
+    FILENAMES=()
 
-    # Check for files with CUR_DATE
-    FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${CUR_DATE2}_${CUR_DATE4}${EXTENSION}" 2>/dev/null)
+    # Check for files with TEST_DATE variants
+    FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE}*.${EXTENSION##*.}" 2>/dev/null)
     if [[ -z "$FILES" ]]; then
-        # Check for files with CUR_DATE2
-        FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${CUR_DATE2}${EXTENSION}" 2>/dev/null)
+        FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE2}*.${EXTENSION##*.}" 2>/dev/null)
     fi
     if [[ -z "$FILES" ]]; then
-        # Check for files with CUR_DATE3
-        FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${CUR_DATE3}${EXTENSION}" 2>/dev/null)
+        FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE3}*.${EXTENSION##*.}" 2>/dev/null)
     fi
 
     for FILE in $FILES; do
         fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
         SIZE=$((SIZE + fsize))
 
-        # Extract database name from the file name based on the type
+        # Extract database name and filename from the full file path
         FILENAME=$(basename "$FILE")
+        FILENAMES+=("$FILENAME")
         case "$TYPE" in
             MYSQL)
-                if [[ "$FILENAME" =~ ^(${CUR_DATE}|${CUR_DATE2}|${CUR_DATE3})_(.*)\.sql\.gz$ ]]; then
+                if [[ "$FILENAME" =~ ^(${TEST_DATE}|${TEST_DATE2}|${TEST_DATE3})_(db_.*)\.sql\.gz$ ]]; then
+                    DATABASE="${BASH_REMATCH[2]}"
+                elif [[ "$FILENAME" =~ ^(${TEST_DATE}|${TEST_DATE2}|${TEST_DATE3})_(.*)\.sql\.gz$ ]]; then
                     DATABASE="${BASH_REMATCH[2]}"
                 fi
                 ;;
             PGSQL)
-                if [[ "$FILENAME" =~ ^(${CUR_DATE}|${CUR_DATE2}|${CUR_DATE3})_(.*)\.dump$ ]]; then
+                if [[ "$FILENAME" =~ ^(${TEST_DATE}|${TEST_DATE2}|${TEST_DATE3})_(.*)\.dump$ ]]; then
                     DATABASE="${BASH_REMATCH[2]}"
                 fi
                 ;;
@@ -115,6 +115,12 @@ do
                 fi
                 ;;
         esac
+
+        # Insert details into the backup log
+        SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath, last_update) 
+                VALUES ('$TEST_DATE','$SERVER',$fsize,'$FILE', NOW())
+                ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize;"
+        mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$SQUERY"
     done
 
     endcopy=$(date +"%Y-%m-%d %H:%M:%S")
@@ -123,19 +129,11 @@ do
         STATE="Error"
     fi
 
-    # Insert or update the daily log with the backup status
-    IQUERY="INSERT INTO daily_log (backup_date, server, \`database\`, size, state, last_update) 
-            VALUES ('$CUR_DATE', '$SERVER', '$DATABASE', $SIZE, '$STATE', '$endcopy') 
-            ON DUPLICATE KEY UPDATE size=$SIZE, state='$STATE', last_update='$endcopy';"
-    mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$IQUERY"
-
-    # Insert details into the backup log
-    for FILE in $FILES; do
-        fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
-        SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath) 
-                VALUES ('$CUR_DATE','$SERVER',$fsize,'$FILE')
-                ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize;"
-        mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$SQUERY"
+    # Insert each file's detail into the daily log with the backup status
+    for FILENAME in "${FILENAMES[@]}"; do
+        IQUERY="INSERT INTO daily_log (backup_date, server, \`database\`, size, state, last_update, fileName) 
+                VALUES ('$TEST_DATE', '$SERVER', '$DATABASE', $SIZE, '$STATE', '$endcopy', '$FILENAME');"
+        mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$IQUERY"
     done
 done
 
