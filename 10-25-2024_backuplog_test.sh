@@ -78,7 +78,6 @@ do
     esac
 
     SIZE=0
-    DATABASE=""
     FILENAMES=()
 
     # Check for files with TEST_DATE variants
@@ -99,7 +98,9 @@ do
         FILENAMES+=("$FILENAME")
         case "$TYPE" in
             MYSQL)
-                if [[ "$FILENAME" =~ ^(${TEST_DATE}|${TEST_DATE2}|${TEST_DATE3})_(.*)\.sql\.gz$ ]]; then
+                if [[ "$FILENAME" =~ ^(${TEST_DATE}|${TEST_DATE2}|${TEST_DATE3})_(db_.*)\.sql\.gz$ ]]; then
+                    DATABASE="${BASH_REMATCH[2]}"
+                elif [[ "$FILENAME" =~ ^(${TEST_DATE}|${TEST_DATE2}|${TEST_DATE3})_(.*)\.sql\.gz$ ]]; then
                     DATABASE="${BASH_REMATCH[2]}"
                 fi
                 ;;
@@ -128,11 +129,10 @@ do
         STATE="Error"
     fi
 
-    # Insert or update the daily log with the backup status
+    # Insert each file's detail into the daily log with the backup status
     for FILENAME in "${FILENAMES[@]}"; do
         IQUERY="INSERT INTO daily_log (backup_date, server, \`database\`, size, state, last_update, fileName) 
-                VALUES ('$TEST_DATE', '$SERVER', '$DATABASE', $SIZE, '$STATE', '$endcopy', '$FILENAME') 
-                ON DUPLICATE KEY UPDATE size=$SIZE, state='$STATE', last_update='$endcopy', fileName='$FILENAME';"
+                VALUES ('$TEST_DATE', '$SERVER', '$DATABASE', $SIZE, '$STATE', '$endcopy', '$FILENAME');"
         mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$IQUERY"
     done
 done
