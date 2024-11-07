@@ -18,16 +18,11 @@ TEST_DATE="2024-10-25"
 TEST_DATE2=$(date -d "$TEST_DATE" +"%Y%m%d")
 TEST_DATE3=$(date -d "$TEST_DATE" +"%d-%m-%Y")
 
-# SQL Query to Ensure daily_log Table Structure is Correct (Auto Increment the ID)
-setup_query="USE ti_db_inventory;
-ALTER TABLE daily_log
-MODIFY COLUMN ID BIGINT NOT NULL AUTO_INCREMENT;"
-
 # Execute Setup Query
 mysql -u"$DB_USER" -p"$DB_PASS" -e "$setup_query"
 
 # SQL Query to Fetch Server Details
-query="SELECT name, ip, user, pwd, os, save_path, location, type FROM ti_db_inventory.servers WHERE active=1 ORDER BY location, type, os"
+query="SELECT name, ip, user, pwd, os, frequency, save_path, location, type FROM ti_db_inventory.servers WHERE active=1 ORDER BY location, type, os"
 
 clear
 
