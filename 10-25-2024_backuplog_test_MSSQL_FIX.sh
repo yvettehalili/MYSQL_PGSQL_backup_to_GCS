@@ -29,6 +29,9 @@ echo "==========================================================================
 echo "START DATE: $TEST_DATE ....................................................................................."
 echo "============================================================================================================"
 
+# Create the storage directory if it does not exist
+mkdir -p $STORAGE
+
 # Function to Prevent Collapsing of Empty Fields
 myread() {
     local input
@@ -42,32 +45,37 @@ myread() {
 }
 
 # Fetch server details from the database and iterate over each server
-mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MAINTENANCE | while IFS=$'\t' myread SERVER SERVERIP WUSER WUSERP OS SAVE_PATH LOCATION TYPE_EXTRA BUCKET;
+mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MAINTENANCE | while IFS=$'\t' myread SERVER SERVERIP WUSER WUSERP OS SAVE_PATH LOCATION TYPE EXTRA BUCKET;
 do
-    # Extract the actual TYPE from the TYPE_EXTRA (assume TYPE_EXTRA is the last field)
-    TYPE=$(echo "$TYPE_EXTRA" | awk '{print $NF}')
-    
+    # Extract the actual TYPE and fix parsing if necessary
+    case "$TYPE" in
+        MYSQL | PGSQL | MSSQL)
+            # Do nothing, TYPE already contains the correct value
+            ;;
+        *)
+            # Fix TYPE parsing: TYPE is in EXTRA or elsewhere
+            TYPE=$(echo "$EXTRA" | awk '{print $1}')
+            ;;
+    esac
+
     echo "============================================================================================================"
     echo "SERVER: $SERVER - $SERVERIP - $OS - $TYPE - $SAVE_PATH - $LOCATION - $BUCKET"
     echo "============================================================================================================"
     echo "Checking backups for SERVER: $SERVER on DATE: $TEST_DATE"
 
-    BACKUP_PATH=""
+    BACKUP_PATH="$SAVE_PATH"
     DATABASE=""
     FILES=""
-    
+
     case "$TYPE" in
         MYSQL)
-            BACKUP_PATH="Backups/Current/MYSQL/$SERVER/"
             EXTENSION="*.sql.gz"
             ;;
         PGSQL)
-            BACKUP_PATH="Backups/Current/POSTGRESQL/$SERVER/"
             EXTENSION="*.dump"
             ;;
         MSSQL)
             # MSSQL backup path construction
-            BACKUP_PATH="$SAVE_PATH"
             ;;
         *)
             echo "Unsupported database type: $TYPE"
@@ -102,15 +110,7 @@ do
             if [[ "$FILENAME" =~ ^${SERVER}_(.*)_(DIFF|FULL)_(.*)\.bak$ ]]; then
                 DB_NAME="${BASH_REMATCH[1]}"
             fi
-
-            # Mount the specific bucket if not already mounted
-            if ! mountpoint -q $STORAGE; then
-                if ! gcsfuse --key-file=/root/jsonfiles/ti-dba-prod-01.json $BUCKET $STORAGE; then
-                    echo "Error mounting gcsfuse. Please check if the key file path is correct and the JSON file exists."
-                    exit 1
-                fi
-            fi
-
+            
             # Insert details into the backup log
             SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath, last_update) 
                     VALUES ('$TEST_DATE','$SERVER',$fsize,'$FILE', NOW())
@@ -128,11 +128,6 @@ do
                     VALUES ('$TEST_DATE', '$SERVER', '$DB_NAME', $fsize, '$STATE', '$endcopy', '$FILENAME');"
             mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$DQUERY"
         done
-
-        # Unmount the bucket storage
-        if mountpoint -q $STORAGE; then
-            fusermount -u $STORAGE
-        fi
     else
         SIZE=0
         FILENAMES=()
