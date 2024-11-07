@@ -18,6 +18,14 @@ TEST_DATE="2024-10-25"
 TEST_DATE2=$(date -d "$TEST_DATE" +"%Y%m%d")
 TEST_DATE3=$(date -d "$TEST_DATE" +"%d-%m-%Y")
 
+# SQL Query to Ensure daily_log Table Structure is Correct (Auto Increment the ID)
+setup_query="USE ti_db_inventory;
+ALTER TABLE daily_log
+MODIFY COLUMN ID BIGINT NOT NULL AUTO_INCREMENT;"
+
+# Execute Setup Query
+mysql -u"$DB_USER" -p"$DB_PASS" -e "$setup_query"
+
 # SQL Query to Fetch Server Details
 query="SELECT name, ip, user, pwd, os, save_path, location, type FROM ti_db_inventory.servers WHERE active=1 ORDER BY location, type, os"
 
@@ -121,19 +129,17 @@ do
                 VALUES ('$TEST_DATE','$SERVER',$fsize,'$FILE', NOW())
                 ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize;"
         mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$SQUERY"
-    done
 
-    endcopy=$(date +"%Y-%m-%d %H:%M:%S")
-    STATE="Completed"
-    if [ "$SIZE" -eq 0 ]; then
-        STATE="Error"
-    fi
+        endcopy=$(date +"%Y-%m-%d %H:%M:%S")
+        STATE="Completed"
+        if [ "$SIZE" -eq 0 ]; then
+            STATE="Error"
+        fi
 
-    # Insert each file's detail into the daily log with the backup status
-    for FILENAME in "${FILENAMES[@]}"; do
-        IQUERY="INSERT INTO daily_log (backup_date, server, \`database\`, size, state, last_update, fileName) 
-                VALUES ('$TEST_DATE', '$SERVER', '$DATABASE', $SIZE, '$STATE', '$endcopy', '$FILENAME');"
-        mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$IQUERY"
+        # Insert each file's detail into the daily log with the backup status
+        DQUERY="INSERT INTO daily_log (backup_date, server, \`database\`, size, state, last_update, fileName) 
+                VALUES ('$TEST_DATE', '$SERVER', '$DATABASE', $fsize, '$STATE', '$endcopy', '$FILENAME');"
+        mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$DQUERY"
     done
 done
 
@@ -144,4 +150,3 @@ if ! fusermount -u $STORAGE; then
 fi
 
 printf "done\n"
-
