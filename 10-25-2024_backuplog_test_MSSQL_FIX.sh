@@ -23,18 +23,20 @@ query="SELECT name, ip, user, pwd, os, frequency, save_path, location, type, buc
 clear
 
 echo "============================================================================================================"
-echo "START DATE: $TEST_DATE ....................................................................................."
+echo "START DATE: $TEST_DATE ......................................................................................"
 echo "============================================================================================================"
 
 # Function to Prevent Collapsing of Empty Fields
 myread() {
     local input
+
     IFS= read -r input || return $?
     while (( $# > 1 )); do
         IFS= read -r "$1" <<< "${input%%[$IFS]*}"
         input="${input#*[$IFS]}"
         shift
     done
+
     IFS= read -r "$1" <<< "$input"
 }
 
@@ -47,7 +49,7 @@ if mountpoint -q $STORAGE; then
 fi
 
 # Fetch server details from the database and iterate over each server
-mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MAINTENANCE | while IFS=$'\t' myread SERVER SERVERIP WUSER WUSERP OS SAVE_PATH LOCATION TYPE BUCKET;
+mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MAINTENANCE | while IFS=$'\t' myread SERVER SERVERIP WUSER WUSERP OS FREQUENCY SAVE_PATH LOCATION TYPE BUCKET;
 do
     echo "============================================================================================================"
     echo "SERVER: $SERVER - $SERVERIP - $OS - $TYPE - $SAVE_PATH - $LOCATION - $BUCKET"
@@ -74,16 +76,26 @@ do
             fi
 
             SIZE=0
+            FILES=""
 
             # Check for files with TEST_DATE variants
             for DATE in "$TEST_DATE" "$TEST_DATE2" "$TEST_DATE3"; do
-                FILES=$(gsutil ls "gs://$BUCKET/${BACKUP_PATH}*/DIFF/*${DATE}*.bak" 2>/dev/null) || true
-                FILES+=$(gsutil ls "gs://$BUCKET/${BACKUP_PATH}*/FULL/*${DATE}*.bak" 2>/dev/null) || true
+                echo "Checking path: gs://$BUCKET/${BACKUP_PATH}*/DIFF/*${DATE}*.bak"
+                DIFF_FILES=$(gsutil ls "gs://$BUCKET/${BACKUP_PATH}*/DIFF/*${DATE}*.bak" 2>/dev/null)
+                echo "Found DIFF files: $DIFF_FILES"
+                FILES="$FILES $DIFF_FILES"
+
+                echo "Checking path: gs://$BUCKET/${BACKUP_PATH}*/FULL/*${DATE}*.bak"
+                FULL_FILES=$(gsutil ls "gs://$BUCKET/${BACKUP_PATH}*/FULL/*${DATE}*.bak" 2>/dev/null)
+                echo "Found FULL files: $FULL_FILES"
+                FILES="$FILES $FULL_FILES"
 
                 if [[ -n "$FILES" ]]; then
                     break
                 fi
             done
+
+            echo "All found files: $FILES"
 
             FILENAMES=()
 
@@ -105,7 +117,7 @@ do
                 SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath, last_update) 
                         VALUES ('$TEST_DATE','$SERVER',$fsize,'$FILE', NOW())
                         ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize;"
-                mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$SQUERY"
+                mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$SQUERY" || { echo "Error executing query: $SQUERY"; exit 1; }
 
                 endcopy=$(date +"%Y-%m-%d %H:%M:%S")
                 STATE="Completed"
@@ -116,7 +128,7 @@ do
                 # Insert each file's detail into the daily log with the backup status
                 DQUERY="INSERT INTO daily_log (backup_date, server, \`database\`, size, state, last_update, fileName) 
                         VALUES ('$TEST_DATE', '$SERVER', '$DB_NAME', $fsize, '$STATE', '$endcopy', '$FILENAME');"
-                mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$DQUERY"
+                mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$DQUERY" || { echo "Error executing query: $DQUERY"; exit 1; }
             done
 
             # Unmount the bucket storage after checking MSSQL backups
@@ -124,19 +136,20 @@ do
                 fusermount -u $STORAGE
                 echo "Successfully unmounted $STORAGE"
             fi
-        ;;
+            ;;
         MYSQL | PGSQL)
             SIZE=0
             FILENAMES=()
 
             # Check for files with TEST_DATE variants
-            FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE}*.${EXTENSION##*.}" 2>/dev/null) || true
-            if [[ -z "$FILES" ]]; then
-                FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE2}*.${EXTENSION##*.}" 2>/dev/null) || true
-            fi
-            if [[ -z "$FILES" ]]; then
-                FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE3}*.${EXTENSION##*.}" 2>/dev/null) || true
-            fi
+            for DATE in "$TEST_DATE" "$TEST_DATE2" "$TEST_DATE3"; do
+                echo "Checking path: gs://$BUCKET/$BACKUP_PATH*${DATE}*.${EXTENSION##*.}"
+                FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${DATE}*.${EXTENSION##*.}" 2>/dev/null)
+                echo "Found files: $FILES"
+                if [[ -n "$FILES" ]]; then
+                    break
+                fi
+            done
 
             for FILE in $FILES; do
                 fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
@@ -166,7 +179,7 @@ do
                 SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath, last_update) 
                         VALUES ('$TEST_DATE','$SERVER',$fsize,'$FILE', NOW())
                         ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize;"
-                mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$SQUERY"
+                mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$SQUERY" || { echo "Error executing query: $SQUERY"; exit 1; }
 
                 endcopy=$(date +"%Y-%m-%d %H:%M:%S")
                 STATE="Completed"
@@ -177,9 +190,9 @@ do
                 # Insert each file's detail into the daily log with the backup status
                 DQUERY="INSERT INTO daily_log (backup_date, server, \`database\`, size, state, last_update, fileName) 
                         VALUES ('$TEST_DATE', '$SERVER', '$DATABASE', $fsize, '$STATE', '$endcopy', '$FILENAME');"
-                mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$DQUERY"
+                mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$DQUERY" || { echo "Error executing query: $DQUERY"; exit 1; }
             done
-        ;;
+            ;;
     esac
 done
 
