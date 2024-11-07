@@ -29,165 +29,165 @@ echo "==========================================================================
 echo "START DATE: $TEST_DATE ....................................................................................."
 echo "============================================================================================================"
 
+# Create the storage directory if it does not exist
+mkdir -p $STORAGE
+
 # Function to Prevent Collapsing of Empty Fields
 myread() {
     local input
     IFS= read -r input || return $?
     while (( $# > 1 )); do
-        IFS= read -r "$1" <<< "${input%%[$IFS]*}"
-        input="${input#*[$IFS]}"
-        shift
-    done
-    IFS= read -r "$1" <<< "$input"
-}
+        IFS= read -r "$1" <<< "${input%%[$IFS false
+IFS=$'\n'
 
 # Fetch server details from the database and iterate over each server
-mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MAINTENANCE | while IFS=$'\t' myread SERVER SERVERIP WUSER WUSERP OS FREQUENCY SAVE_PATH LOCATION TYPE BUCKET;
-do
-    echo "============================================================================================================"
-    echo "SERVER: $SERVER - $SERVERIP - $OS - $TYPE - $SAVE_PATH - $LOCATION - $BUCKET"
-    echo "============================================================================================================"
-    echo "Checking backups for SERVER: $SERVER on DATE: $TEST_DATE"
+servers=$(mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MAINTENANCE)
+IFS=$'\n'
+for line in $servers; do
+    read -a server_details <<< "$line"
+    SERVER="${server_details[0]}"
+    SERVERIP="${server_details[1]}"
+    WUSER="${server_details[2]}"
+    WUSERP="${server_details[3]}"
+    OS="${server_details[4]}"
+    FREQUENCY="${server_details[5]}"
+    - PATH: Path to the backups directory
 
-    BACKUP_PATH="$SAVE_PATH"
-    DATABASE=""
-    FILES=""
+    Returns:
+        None
+    """
+    SIZE = 0
 
-    case "$TYPE" in
-        MYSQL)
-            EXTENSION="*.sql.gz"
-            ;;
-        PGSQL)
-            EXTENSION="*.dump"
-            ;;
-        MSSQL)
+    # Check for files with TEST_DATE variants
+    for DATE in [TEST_DATE, TEST_DATE2, TEST_DATE3]:
+        FILES = run_ls(f"gs://{BUCKET}/{SAVE_PATH}*/DIFF/*{DATE}*.bak")
+        FILES += run_ls(f"gs://{BUCKET}/{SAVE_PATH}*/FULL/*{DATE}*.bak")
+
+        if FILES:
+            break
+
+    FILENAMES = []
+
+    for FILE in FILES:
+        fsize = run_du(FILE)
+        SIZE += fsize
+
+        # Extract database name and filename from the full file path
+        FILENAME = os.path.basename(FILE)
+        FILENAMES.append(FILENAME)
+
+        if re.match(rf"^{SERVER}_(.*)_(DIFF|FULL)_(.*)\.bak$", FILENAME):
+            DB_NAME = re.match(rf"^{SERVER}_(.*)_(DIFF|FULL)_(.*)\.bak$", FILENAME).group(1)
+
+        # Insert details into the backup log
+        SQUERY = f"""
+            INSERT INTO backup_log (backup_date, server, size, filepath, last_update)
+            VALUES ('{TEST_DATE}','{SERVER}',{fsize},'{FILE}', NOW())
+            ON DUPLICATE KEY UPDATE last_update=NOW(), size={fsize};
+        """
+        run_mysql(SQUERY)
+
+        endcopy = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        STATE = "Completed"
+        if SIZE == 0:
+            STATE = "Error"
+
+        # Insert each file's detail into the daily log with the backup status
+        DQUERY = f"""
+            INSERT INTO daily_log (backup_date, server, `database`, size, state, last_update, fileName)
+            VALUES ('{TEST_DATE}', '{SERVER}', '{DB_NAME}', {fsize}, '{STATE}', '{endcopy}', '{FILENAME}');
+        """
+        run_mysql(DQUERY)
+
+
+def main():
+    """
+    Main function to orchestrate the tasks for checking backups and logging to the database.
+    """
+    # Create the storage directory if it does not exist
+    os.makedirs(STORAGE, exist_ok=True)
+
+    # Initialize the SQL query for server details
+    query = "SELECT name, ip, user, pwd, os, frequency, save_path, location, type, bucket FROM ti_db_inventory.servers WHERE active=1 ORDER BY location, type, os"
+
+    # Fetch server details from the MySQL database
+    for SERVER, SERVERIP, WUSER, WUSERP, OS, FREQUENCY, SAVE_PATH, LOCATION, TYPE, BUCKET in run_mysql(query):
+        print("=" * 100)
+        print(f"SERVER: {SERVER} - {SERVERIP} - {OS} - {TYPE} - {SAVE_PATH} - {LOCATION} - {BUCKET}")
+        print("=" * 100)
+        print(f"Checking backups for SERVER: {SERVER} on DATE: {TEST_DATE}")
+
+        BACKUP_PATH = SAVE_PATH
+
+        if TYPE == "MSSQL":
             # Ensure the storage directory is clean and ready for mount
-            if mountpoint -q $STORAGE; then
-                fusermount -u $STORAGE
-            fi
+            if os.path.ismount(STORAGE):
+                subprocess.run(["fusermount", "-u", STORAGE], check=True)
 
             # Mount the Google Cloud bucket using gcsfuse
-            if ! gcsfuse --key-file=/root/jsonfiles/ti-dba-prod-01.json $BUCKET $STORAGE; then
-                echo "Error mounting gcsfuse. Please check if the key file path is correct and the JSON file exists."
-                exit 1
-            fi
+            print(f"Mounting bucket {BUCKET}")
+            if not gcsfuse_mounted(BUCKET):
+                gcsfuse_mount(BUCKET, STORAGE)
 
-            SIZE=0
+            process_mssql_backups(BUCKET, BACKUP_PATH, SERVER)
 
-            # Check for files with TEST_DATE variants
-            for DATE in "$TEST_DATE" "$TEST_DATE2" "$TEST_DATE3"; do
-                FILES=$(gsutil ls "gs://$BUCKET/${BACKUP_PATH}*/DIFF/*${DATE}*.bak" 2>/dev/null)
-                FILES+=$(gsutil ls "gs://$BUCKET/${BACKUP_PATH}*/FULL/*${DATE}*.bak" 2>/dev/null)
-
-                if [[ -n "$FILES" ]]; then
-                    break
-                fi
-            done
-
-            FILENAMES=()
-
-            for FILE in $FILES; do
-                fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
-                SIZE=$((SIZE + fsize))
-
-                # Extract database name and filename from the full file path
-                FILENAME=$(basename "$FILE")
-                FILENAMES+=("$FILENAME")
-
-                if [[ "$FILENAME" =~ ^${SERVER}_(.*)_(DIFF|FULL)_(.*)\.bak$ ]]; then
-                    DB_NAME="${BASH_REMATCH[1]}"
-                fi
-                
-                # Insert details into the backup log
-                SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath, last_update) 
-                        VALUES ('$TEST_DATE','$SERVER',$fsize,'$FILE', NOW())
-                        ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize;"
-                mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$SQUERY"
-
-                endcopy=$(date +"%Y-%m-%d %H:%M:%S")
-                STATE="Completed"
-                if [ "$SIZE" -eq 0 ]; then
-                    STATE="Error"
-                fi
-
-                # Insert each file's detail into the daily log with the backup status
-                DQUERY="INSERT INTO daily_log (backup_date, server, \`database\`, size, state, last_update, fileName) 
-                        VALUES ('$TEST_DATE', '$SERVER', '$DB_NAME', $fsize, '$STATE', '$endcopy', '$FILENAME');"
-                mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$DQUERY"
-            done
             # Unmount the bucket storage after checking MSSQL backups
-            if mountpoint -q $STORAGE; then
-                fusermount -u $STORAGE
-                echo "Successfully unmounted $STORAGE"
-            fi
-        ;;
+            if os.path.ismount(STORAGE):
+                subprocess.run(["fusermount", "-u", STORAGE], check=True)
+                print(f"Successfully unmounted {STORAGE}")
 
-        MYSQL | PGSQL)
-            SIZE=0
-            FILENAMES=()
+        elif TYPE in ["MYSQL", "PGSQL"]:
+            EXTENSION = "*.sql.gz" if TYPE == "MYSQL" else "*.dump"
+            SIZE = 0
+            FILENAMES = []
 
-            # Check for files with TEST_DATE variants
-            FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE}*.${EXTENSION##*.}" 2>/dev/null)
-            if [[ -z "$FILES" ]]; then
-                FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE2}*.${EXTENSION##*.}" 2>/dev/null)
-            fi
-            if [[ -z "$FILES" ]]; then
-                FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE3}*.${EXTENSION##*.}" 2>/dev/null)
-            fi
+            for DATE in [TEST_DATE, TEST_DATE2, TEST_DATE3]:
+                FILES = run_ls(f"gs://{BUCKET}/{BACKUP_PATH}*{DATE}*.{EXTENSION.split('.')[1]}")
 
-            for FILE in $FILES; do
-                fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
-                SIZE=$((SIZE + fsize))
+                if FILES:
+                    break
+
+            for FILE in FILES:
+                fsize = run_du(FILE)
+                SIZE += fsize
 
                 # Extract database name and filename from the full file path
-                FILENAME=$(basename "$FILE")
-                FILENAMES+=("$FILENAME")
-                case "$TYPE" in
-                    MYSQL)
-                        if [[ "$FILENAME" =~ ^(${TEST_DATE}|${TEST_DATE2}|${TEST_DATE3})_(db_.*)\.sql\.gz$ ]]; then
-                            DATABASE="${BASH_REMATCH[2]}"
-                        elif [[ "$FILENAME" =~ ^(${TEST_DATE}|${TEST_DATE2}|${TEST_DATE3})_(.*)\.sql\.gz$ ]]; then
-                            DATABASE="${BASH_REMATCH[2]}"
-                        fi
-                        ;;
-                    PGSQL)
-                        if [[ "$FILENAME" =~ ^(${TEST_DATE}|${TEST_DATE2}|${TEST_DATE3})_(.*)\.dump$ ]]; then
-                            DATABASE="${BASH_REMATCH[2]}"
-                        fi
-                        ;;
-                esac
+                FILENAME = os.path.basename(FILE)
+                FILENAMES.append(FILENAME)
+                db_match = re.match(rf"^({TEST_DATE}|{TEST_DATE2}|{TEST_DATE3})_(.*)\.{EXTENSION.split('.')[1]}$", FILENAME)
+                if db_match:
+                    DATABASE = db_match.group(2)
 
                 # Insert details into the backup log
-                SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath, last_update) 
-                        VALUES ('$TEST_DATE','$SERVER',$fsize,'$FILE', NOW())
-                        ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize;"
-                mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$SQUERY"
+                SQUERY = f"""
+                    INSERT INTO backup_log (backup_date, server, size, filepath, last_update)
+                    VALUES ('{TEST_DATE}','{SERVER}',{fsize},'{FILE}', NOW())
+                    ON DUPLICATE KEY UPDATE last_update=NOW(), size={fsize};
+                """
+                run_mysql(SQUERY)
 
-                endcopy=$(date +"%Y-%m-%d %H:%M:%S")
-                STATE="Completed"
-                if [ "$SIZE" -eq 0 ]; then
-                    STATE="Error"
-                fi
+                endcopy = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                STATE = "Completed"
+                if SIZE == 0:
+                    STATE = "Error"
 
                 # Insert each file's detail into the daily log with the backup status
-                DQUERY="INSERT INTO daily_log (backup_date, server, \`database\`, size, state, last_update, fileName) 
-                        VALUES ('$TEST_DATE', '$SERVER', '$DATABASE', $fsize, '$STATE', '$endcopy', '$FILENAME');"
-                mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$DQUERY"
-            done
-        ;;
-    esac
-done
+                DQUERY = f"""
+                    INSERT INTO daily_log (backup_date, server, `database`, size, state, last_update, fileName)
+                    VALUES ('{TEST_DATE}', '{SERVER}', '{DATABASE}', {fsize}, '{STATE}', '{endcopy}', '{FILENAME}');
+                """
+                run_mysql(DQUERY)
 
-# Unmount the cloud storage if any remnants
-if mountpoint -q $STORAGE; then
-    if ! fusermount -u $STORAGE; then
-        echo "Error unmounting /root/cloudstorage"
-        exit 1
-    else
-        echo "Successfully unmounted /root/cloudstorage"
-    fi
-fi
+    # Unmount the cloud storage if it remains mounted
+    if os.path.ismount(STORAGE):
+        if not subprocess.run(["fusermount", "-u", STORAGE], check=True):
+            print("Error unmounting /root/cloudstorage")
+            exit(1)
+        else:
+            print("Successfully unmounted /root/cloudstorage")
 
-printf "done\n"
+    print("done")
 
 
+if __name__ == "__main__":
+    main()
