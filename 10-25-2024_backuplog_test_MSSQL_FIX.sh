@@ -54,8 +54,8 @@ myread() {
 # Fetch server details from the database and iterate over each server
 mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MAINTENANCE | while IFS=$'\t' myread SERVER SERVERIP WUSER WUSERP OS SAVE_PATH LOCATION TYPE_EXTRA;
 do
-    # Trim leading and trailing whitespace from TYPE_EXTRA
-    TYPE=$(echo "$TYPE_EXTRA" | xargs)
+    # Extract the actual TYPE from the TYPE_EXTRA (assume TYPE_EXTRA is the last field)
+    TYPE=$(echo "$TYPE_EXTRA" | awk '{print $NF}')
     
     echo "============================================================================================================"
     echo "SERVER: $SERVER - $SERVERIP - $OS - $TYPE - $SAVE_PATH - $LOCATION"
@@ -197,4 +197,3 @@ if ! fusermount -u $STORAGE; then
 fi
 
 printf "done\n"
-
