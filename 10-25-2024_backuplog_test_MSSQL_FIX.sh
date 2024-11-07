@@ -26,9 +26,6 @@ echo "==========================================================================
 echo "START DATE: $TEST_DATE ....................................................................................."
 echo "============================================================================================================"
 
-# Create the storage directory if it does not exist
-mkdir -p $STORAGE
-
 # Function to Prevent Collapsing of Empty Fields
 myread() {
     local input
@@ -41,9 +38,16 @@ myread() {
     IFS= read -r "$1" <<< "$input"
 }
 
+# Create the storage directory if it does not exist
+mkdir -p $STORAGE
+
+# Ensure the storage is clean and ready for mount
+if mountpoint -q $STORAGE; then
+    fusermount -u $STORAGE
+fi
+
 # Fetch server details from the database and iterate over each server
-IFS=$'\n'
-mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MAINTENANCE | while IFS=$'\t' myread SERVER SERVERIP WUSER WUSERP OS FREQUENCY SAVE_PATH LOCATION TYPE BUCKET;
+mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MAINTENANCE | while IFS=$'\t' myread SERVER SERVERIP WUSER WUSERP OS SAVE_PATH LOCATION TYPE BUCKET;
 do
     echo "============================================================================================================"
     echo "SERVER: $SERVER - $SERVERIP - $OS - $TYPE - $SAVE_PATH - $LOCATION - $BUCKET"
@@ -62,11 +66,6 @@ do
             EXTENSION="*.dump"
             ;;
         MSSQL)
-            # Ensure the storage directory is clean and ready for mount
-            if mountpoint -q $STORAGE; then
-                fusermount -u $STORAGE
-            fi
-
             # Mount the Google Cloud bucket using gcsfuse
             echo "Mounting bucket $BUCKET"
             if ! gcsfuse --key-file=/root/jsonfiles/ti-dba-prod-01.json $BUCKET $STORAGE; then
@@ -78,8 +77,8 @@ do
 
             # Check for files with TEST_DATE variants
             for DATE in "$TEST_DATE" "$TEST_DATE2" "$TEST_DATE3"; do
-                FILES=$(gsutil ls "gs://$BUCKET/${BACKUP_PATH}*/DIFF/*${DATE}*.bak" 2>/dev/null)
-                FILES+=$(gsutil ls "gs://$BUCKET/${BACKUP_PATH}*/FULL/*${DATE}*.bak" 2>/dev/null)
+                FILES=$(gsutil ls "gs://$BUCKET/${BACKUP_PATH}*/DIFF/*${DATE}*.bak" 2>/dev/null) || true
+                FILES+=$(gsutil ls "gs://$BUCKET/${BACKUP_PATH}*/FULL/*${DATE}*.bak" 2>/dev/null) || true
 
                 if [[ -n "$FILES" ]]; then
                     break
@@ -99,6 +98,8 @@ do
                 if [[ "$FILENAME" =~ ^${SERVER}_(.*)_(DIFF|FULL)_(.*)\.bak$ ]]; then
                     DB_NAME="${BASH_REMATCH[1]}"
                 fi
+
+                echo "Processing file: $FILE, size: $fsize"
                 
                 # Insert details into the backup log
                 SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath, last_update) 
@@ -129,12 +130,12 @@ do
             FILENAMES=()
 
             # Check for files with TEST_DATE variants
-            FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE}*.${EXTENSION##*.}" 2>/dev/null)
+            FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE}*.${EXTENSION##*.}" 2>/dev/null) || true
             if [[ -z "$FILES" ]]; then
-                FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE2}*.${EXTENSION##*.}" 2>/dev/null)
+                FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE2}*.${EXTENSION##*.}" 2>/dev/null) || true
             fi
             if [[ -z "$FILES" ]]; then
-                FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE3}*.${EXTENSION##*.}" 2>/dev/null)
+                FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TEST_DATE3}*.${EXTENSION##*.}" 2>/dev/null) || true
             fi
 
             for FILE in $FILES; do
@@ -158,6 +159,8 @@ do
                         fi
                         ;;
                 esac
+
+                echo "Processing file: $FILE, size: $fsize"
 
                 # Insert details into the backup log
                 SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath, last_update) 
@@ -191,4 +194,3 @@ if mountpoint -q $STORAGE; then
 fi
 
 printf "done\n"
-
