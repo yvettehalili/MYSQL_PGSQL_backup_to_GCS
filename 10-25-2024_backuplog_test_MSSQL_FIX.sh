@@ -28,16 +28,14 @@ echo "==========================================================================
 
 # Function to Prevent Collapsing of Empty Fields
 myread() {
-    local input
-
-    IFS= read -r input || return $?
-    while (( $# > 1 )); do
-        IFS= read -r "$1" <<< "${input%%[$IFS]*}"
-        input="${input#*[$IFS]}"
-        shift
-    done
-
-    IFS= read -r "$1" <<< "$input"
+        local input
+        IFS= read -r input || return $?
+        while (( $# > 1 )); do
+                IFS= read -r "$1" <<< "${input%%[$IFS]*}"
+                input="${input#*[$IFS]}"
+                shift
+        done
+        IFS= read -r "$1" <<< "$input"
 }
 
 # Create the storage directory if it does not exist
