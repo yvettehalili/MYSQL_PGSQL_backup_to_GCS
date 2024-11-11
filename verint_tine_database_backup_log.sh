@@ -10,8 +10,7 @@ DB_PASS='Telus2017#'
 DB_MAINTENANCE=ti_db_inventory
 
 # Environment Variables
-STORAGE1=/root/cloudstorage1
-STORAGE2=/root/cloudstorage2
+STORAGE=/root/cloudstorage
 
 # Date Range Variables for Checking Backups
 START_DATE="2024-09-07"
@@ -22,19 +21,18 @@ query="SELECT name, ip, user, pwd, os, frequency, save_path, location, type FROM
 
 clear
 
-# Create the storage directories if they do not exist
-mkdir -p $STORAGE1
-mkdir -p $STORAGE2
+# Create the storage directory if it does not exist
+mkdir -p $STORAGE
 
-# Function to mount the appropriate storage based on the project
+# Function to mount the appropriate bucket storage based on the project
 mount_storage() {
     local project=$1
     case $project in
         tine-payroll-prod-01)
-            gcsfuse --key-file=/root/jsonfiles/tine-payroll-prod-01.json tine-payroll-eu-prod-01-db-backups $STORAGE1 || { echo "Error mounting gcsfuse for tine-payroll-prod-01"; exit 1; }
+            gcsfuse --key-file=/root/jsonfiles/tine-payroll-prod-01.json tine-payroll-eu-prod-01-db-backups $STORAGE || { echo "Error mounting gcsfuse for tine-payroll-prod-01"; exit 1; }
             ;;
         ti-verint152prod)
-            gcsfuse --key-file=/root/jsonfiles/ti-verint152prod-4ba9008f4ef8.json ticxwfo-dbbackup $STORAGE2 || { echo "Error mounting gcsfuse for ti-verint152prod"; exit 1; }
+            gcsfuse --key-file=/root/jsonfiles/ti-verint152prod-4ba9008f4ef8.json ticxwfo-dbbackup $STORAGE || { echo "Error mounting gcsfuse for ti-verint152prod"; exit 1; }
             ;;
         *)
             echo "Unsupported project: $project"
@@ -43,21 +41,9 @@ mount_storage() {
     esac
 }
 
-# Function to unmount the appropriate storage based on the project
+# Function to unmount the storage
 unmount_storage() {
-    local project=$1
-    case $project in
-        tine-payroll-prod-01)
-            fusermount -u $STORAGE1 || { echo "Error unmounting $STORAGE1"; exit 1; }
-            ;;
-        ti-verint152prod)
-            fusermount -u $STORAGE2 || { echo "Error unmounting $STORAGE2"; exit 1; }
-            ;;
-        *)
-            echo "Unsupported project: $project"
-            exit 1
-            ;;
-    esac
+    fusermount -u $STORAGE || { echo "Error unmounting $STORAGE"; exit 1; }
 }
 
 # Function to read and prevent collapsing of empty fields
@@ -90,7 +76,7 @@ while [[ "$current_date" < "$END_DATE" || "$current_date" == "$END_DATE" ]]; do
         TYPE=$(echo "$TYPE_EXTRA" | awk '{print $NF}')
         
         echo "============================================================================================================"
-        echo "SERVER: $SERVER - $SERVERIP - $OS - $TYPE - $SAVE_PATH - $LOCATION"
+        echo "SERVER: $SERVER - $SERVERIP - $OS - $TYPE"
         echo "============================================================================================================"
         echo "Checking backups for SERVER: $SERVER on DATE: $TEST_DATE"
 
@@ -102,12 +88,24 @@ while [[ "$current_date" < "$END_DATE" || "$current_date" == "$END_DATE" ]]; do
             tine-payroll-eu-prod-01)
                 PROJECT="tine-payroll-prod-01"
                 mount_storage $PROJECT
-                BACKUP_PATH="$STORAGE1/Backups/Current/$SERVER"
                 ;;
             ticxwfo)
                 PROJECT="ti-verint152prod"
                 mount_storage $PROJECT
-                BACKUP_PATH="$STORAGE2/V152_Backups/$SERVER"
+                ;;
+            *)
+                echo "Unsupported location: $LOCATION"
+                continue
+                ;;
+        esac
+
+        # Determine backup path based on server name
+        case "$LOCATION" in
+            tine-payroll-eu-prod-01)
+                BACKUP_PATH="$STORAGE/Backups/Current/$SERVER"
+                ;;
+            ticxwfo)
+                BACKUP_PATH="$STORAGE/V152_Backups/$SERVER"
                 ;;
             *)
                 echo "Unsupported location: $LOCATION"
@@ -163,7 +161,7 @@ while [[ "$current_date" < "$END_DATE" || "$current_date" == "$END_DATE" ]]; do
         done
 
         # Unmount storage after processing each server
-        unmount_storage $PROJECT
+        unmount_storage
 
     done
     
