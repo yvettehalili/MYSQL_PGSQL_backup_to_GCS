@@ -65,7 +65,7 @@ while [[ "$current_date" < "$END_DATE" || "$current_date" == "$END_DATE" ]]; do
         echo "============================================================================================================"
         echo "Checking backups for SERVER: $SERVER on DATE: $TEST_DATE"
 
-        BACKUP_PATH="$STORAGE/V152_Backups/$SERVER"
+        BACKUP_PATH="V152_Backups/$SERVER"
         echo "Backup path being checked: $BACKUP_PATH"
         
         SIZE=0
@@ -74,65 +74,64 @@ while [[ "$current_date" < "$END_DATE" || "$current_date" == "$END_DATE" ]]; do
         # Handle MSSQL separately due to different backup structure
         if [[ "$TYPE" == "MSSQL" ]]; then
             for DATE in "$TEST_DATE" "$TEST_DATE2" "$TEST_DATE3"; do
-                for db_folder in $(gsutil ls "gs://$BUCKET/V152_Backups/${SERVER}/" | grep '/$'); do
-                    FULL_PATH="${db_folder}FULL/"
-                    DIFF_PATH="${db_folder}DIFF/"
-                    echo "Checking FULL directory: ${FULL_PATH}"
-                    echo "Checking DIFF directory: ${DIFF_PATH}"
+                # List all database directories under the server
+                for DB_FOLDER in $(gsutil ls "gs://$BUCKET/$BACKUP_PATH/" | grep '/$'); do
+                    DB_FULL_PATH="${DB_FOLDER}FULL/"
+                    DB_DIFF_PATH="${DB_FOLDER}DIFF/"
+                    echo "Checking FULL directory: ${DB_FULL_PATH}"
+                    echo "Checking DIFF directory: ${DB_DIFF_PATH}"
                     
-                    FULL_FILES=$(gsutil ls "${FULL_PATH}*${DATE}*.bak" 2>/dev/null)
-                    DIFF_FILES=$(gsutil ls "${DIFF_PATH}*${DATE}*.bak" 2>/dev/null)
-                    
-                    FILES="${FULL_FILES} ${DIFF_FILES}"
+                    # Aggregate file lists from FULL and DIFF directories
+                    FILES=$(gsutil ls "${DB_FULL_PATH}*${DATE}*.bak" 2>/dev/null)
+                    FILES+=$(gsutil ls "${DB_DIFF_PATH}*${DATE}*.bak" 2>/dev/null)
                     
                     if [[ -n "$FILES" ]]; then
                         echo "Found backup files: $FILES"
-                        break
+                        
+                        for FILE in $FILES; do
+                            fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
+                            SIZE=$((SIZE + fsize))
+
+                            # Extract database name and filename from the full file path
+                            FILENAME=$(basename "$FILE")
+                            FILENAMES+=("$FILENAME")
+
+                            if [[ "$FILENAME" =~ ^${SERVER}_(.*)_(DIFF|FULL)_(.*)\.bak$ ]]; then
+                                DB_NAME="${BASH_REMATCH[1]}"
+                            fi
+
+                            echo "Backup details - Server: $SERVER, Database: $DB_NAME, Filename: $FILENAME, Filesize: $fsize, Path: $FILE"
+
+                            # Insert details into the backup log
+                            SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath, last_update) 
+                                    VALUES ('$TEST_DATE','$SERVER',$fsize,'$FILE', NOW())
+                                    ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize;"
+                            echo "Inserting into backup_log: \"$SQUERY\""
+                            mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$SQUERY"
+
+                            endcopy=$(date +"%Y-%m-%d %H:%M:%S")
+                            STATE="Completed"
+                            if [ "$SIZE" -eq 0 ]; then
+                                STATE="Error"
+                            fi
+
+                            # Insert each file's detail into the daily log with the backup status
+                            DQUERY="INSERT INTO daily_log (backup_date, server, \`database\`, size, state, last_update, fileName) 
+                                    VALUES ('$TEST_DATE', '$SERVER', '$DB_NAME', $fsize, '$STATE', '$endcopy', '$FILENAME');"
+                            echo "Inserting into daily_log: \"$DQUERY\""
+                            mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$DQUERY"
+                        done
                     else
-                        echo "No backup files found for date: $DATE in ${FULL_PATH} and ${DIFF_PATH}"
+                        echo "No backup files found for date: $DATE in ${DB_FULL_PATH} and ${DB_DIFF_PATH}"
                     fi
                 done
                 if [[ -n "$FILES" ]]; then
                     break
                 fi
             done
-
-            for FILE in $FILES; do
-                fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
-                SIZE=$((SIZE + fsize))
-
-                # Extract database name and filename from the full file path
-                FILENAME=$(basename "$FILE")
-                FILENAMES+=("$FILENAME")
-
-                if [[ "$FILENAME" =~ ^${SERVER}_(.*)_(DIFF|FULL)_(.*)\.bak$ ]]; then
-                    DB_NAME="${BASH_REMATCH[1]}"
-                fi
-
-                # Insert details into the backup log
-                SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath, last_update) 
-                        VALUES ('$TEST_DATE','$SERVER',$fsize,'$FILE', NOW())
-                        ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize;"
-                echo "Inserting into backup_log: \"$SQUERY\""
-                mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$SQUERY"
-
-                endcopy=$(date +"%Y-%m-%d %H:%M:%S")
-                STATE="Completed"
-                if [ "$SIZE" -eq 0 ]; then
-                    STATE="Error"
-                fi
-
-                # Insert each file's detail into the daily log with the backup status
-                DQUERY="INSERT INTO daily_log (backup_date, server, \`database\`, size, state, last_update, fileName) 
-                        VALUES ('$TEST_DATE', '$SERVER', '$DB_NAME', $fsize, '$STATE', '$endcopy', '$FILENAME');"
-                echo "Inserting into daily_log: \"$DQUERY\""
-                mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$DQUERY"
-            done
-
         else
             echo "Skipping non-MSSQL server: $SERVER"
         fi
-        
     done
     
     # Increment the date by one day
