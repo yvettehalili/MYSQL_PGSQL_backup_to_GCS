@@ -73,10 +73,10 @@ while [[ "$current_date" < "$END_DATE" || "$current_date" == "$END_DATE" ]]; do
         # Handle MSSQL separately due to different backup structure
         if [[ "$TYPE" == "MSSQL" ]]; then
             for DATE in "$TEST_DATE" "$TEST_DATE2" "$TEST_DATE3"; do
-                for db_folder in $(gsutil ls "gs://$BUCKET/$BACKUP_PATH/" | grep -E '.*/$'); do
+                for db_folder in $(gsutil ls "gs://$BUCKET/V152_Backups/${SERVER}/" | grep '\/$'); do
                     echo "Checking database folder: $db_folder"
-                    FILES=$(gsutil ls "$db_folder/DIFF/*${DATE}*.bak" 2>/dev/null)
-                    FILES+=$(gsutil ls "$db_folder/FULL/*${DATE}*.bak" 2>/dev/null)
+                    FILES=$(gsutil ls "${db_folder}DIFF/*${DATE}*.bak" 2>/dev/null)
+                    FILES+=" $(gsutil ls "${db_folder}FULL/*${DATE}*.bak" 2>/dev/null)"
 
                     if [[ -n "$FILES" ]]; then
                         echo "Found backup files: $FILES"
