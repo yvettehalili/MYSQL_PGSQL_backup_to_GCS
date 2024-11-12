@@ -55,13 +55,13 @@ while [[ "$current_date" < "$END_DATE" || "$current_date" == "$END_DATE" ]]; do
     echo "============================================================================================================"
 
     # Fetch and iterate over server details from the database
-    mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MAINTENANCE | while IFS=$'\t' read_fields SERVER SERVERIP WUSER WUSERP OS SAVE_PATH LOCATION TYPE_EXTRA;
+    mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MAINTENANCE | while IFS=$'\t' read_fields SERVER SERVERIP WUSER WUSERP OS SAVE_PATH LOCATION TYPE_EXTRA
     do
         # Extract the actual TYPE from the TYPE_EXTRA (assume TYPE_EXTRA is the last field)
         TYPE=$(echo "$TYPE_EXTRA" | awk '{print $NF}')
         
         echo "============================================================================================================"
-        echo "SERVER: $SERVER - $SERVERIP - $OS - $TYPE"
+        echo "SERVER: $SERVER - $SERVERIP - $OS - $TYPE - $SAVE_PATH - $LOCATION"
         echo "============================================================================================================"
         echo "Checking backups for SERVER: $SERVER on DATE: $TEST_DATE"
 
@@ -77,12 +77,15 @@ while [[ "$current_date" < "$END_DATE" || "$current_date" == "$END_DATE" ]]; do
 
             # Check for files with TEST_DATE variants
             for DATE in "$TEST_DATE" "$TEST_DATE2" "$TEST_DATE3"; do
+                echo "Checking for files in DIFF and FULL directories with date: $DATE"
                 FILES=$(gsutil ls "gs://$BUCKET/${BACKUP_PATH}/DIFF/*${DATE}*.bak" 2>/dev/null)
                 FILES+=$(gsutil ls "gs://$BUCKET/${BACKUP_PATH}/FULL/*${DATE}*.bak" 2>/dev/null)
 
                 if [[ -n "$FILES" ]]; then
                     echo "Found backup files: $FILES"
                     break
+                else
+                    echo "No backup files found for date: $DATE in DIFF and FULL directories."
                 fi
             done
 
