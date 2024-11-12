@@ -65,31 +65,31 @@ while [[ "$current_date" < "$END_DATE" || "$current_date" == "$END_DATE" ]]; do
         echo "============================================================================================================"
         echo "Checking backups for SERVER: $SERVER on DATE: $TEST_DATE"
 
-        BACKUP_PATH="$SERVER"
+        BACKUP_PATH="$STORAGE/V152_Backups/$SERVER"
         echo "Backup path being checked: $BACKUP_PATH"
-        FILES=""
         SIZE=0
         FILENAMES=()
 
         # Handle MSSQL separately due to different backup structure
         if [[ "$TYPE" == "MSSQL" ]]; then
-            SIZE=0
-
-            # Check for files with TEST_DATE variants
             for DATE in "$TEST_DATE" "$TEST_DATE2" "$TEST_DATE3"; do
-                echo "Checking for files in DIFF and FULL directories with date: $DATE"
-                FILES=$(gsutil ls "gs://$BUCKET/${BACKUP_PATH}/DIFF/*${DATE}*.bak" 2>/dev/null)
-                FILES+=$(gsutil ls "gs://$BUCKET/${BACKUP_PATH}/FULL/*${DATE}*.bak" 2>/dev/null)
+                for db_folder in $(gsutil ls "gs://$BUCKET/$BACKUP_PATH/" | grep -E '.*/$'); do
+                    echo "Checking database folder: $db_folder"
+                    FILES=$(gsutil ls "$db_folder/DIFF/*${DATE}*.bak" 2>/dev/null)
+                    FILES+=$(gsutil ls "$db_folder/FULL/*${DATE}*.bak" 2>/dev/null)
+
+                    if [[ -n "$FILES" ]]; then
+                        echo "Found backup files: $FILES"
+                        break
+                    else
+                        echo "No backup files found for date: $DATE in $db_folder"
+                    fi
+                done
 
                 if [[ -n "$FILES" ]]; then
-                    echo "Found backup files: $FILES"
                     break
-                else
-                    echo "No backup files found for date: $DATE in DIFF and FULL directories."
                 fi
             done
-
-            FILENAMES=()
 
             for FILE in $FILES; do
                 fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
@@ -122,7 +122,7 @@ while [[ "$current_date" < "$END_DATE" || "$current_date" == "$END_DATE" ]]; do
                 echo "Inserting into daily_log: \"$DQUERY\""
                 mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$DQUERY"
             done
-        
+
         else
             echo "Skipping non-MSSQL server: $SERVER"
         fi
