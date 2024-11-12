@@ -27,6 +27,18 @@ clear
 # Create the storage directory if it does not exist
 mkdir -p $STORAGE
 
+# Function to read and prevent collapsing of empty fields
+read_fields() {
+    local input
+    IFS= read -r input || return $?
+    while (( $# > 1 )); do
+        IFS= read -r "$1" <<< "${input%%[$IFS]*}"
+        input="${input#*[$IFS]}"
+        shift
+    done
+    IFS= read -r "$1" <<< "$input"
+}
+
 # Mount storage for ti-verint152prod
 echo "Mounting bucket for project ti-verint152prod"
 gcsfuse --key-file=/root/jsonfiles/ti-verint152prod-4ba9008f4ef8.json $BUCKET $STORAGE || { echo "Error mounting gcsfuse for ti-verint152prod"; exit 1; }
