@@ -67,25 +67,31 @@ while [[ "$current_date" < "$END_DATE" || "$current_date" == "$END_DATE" ]]; do
 
         BACKUP_PATH="$STORAGE/V152_Backups/$SERVER"
         echo "Backup path being checked: $BACKUP_PATH"
+        
         SIZE=0
         FILENAMES=()
 
         # Handle MSSQL separately due to different backup structure
         if [[ "$TYPE" == "MSSQL" ]]; then
             for DATE in "$TEST_DATE" "$TEST_DATE2" "$TEST_DATE3"; do
-                for db_folder in $(gsutil ls "gs://$BUCKET/V152_Backups/${SERVER}/" | grep '\/$'); do
-                    echo "Checking database folder: $db_folder"
-                    FILES=$(gsutil ls "${db_folder}DIFF/*${DATE}*.bak" 2>/dev/null)
-                    FILES+=" $(gsutil ls "${db_folder}FULL/*${DATE}*.bak" 2>/dev/null)"
-
+                for db_folder in $(gsutil ls "gs://$BUCKET/V152_Backups/${SERVER}/" | grep '/$'); do
+                    FULL_PATH="${db_folder}FULL/"
+                    DIFF_PATH="${db_folder}DIFF/"
+                    echo "Checking FULL directory: ${FULL_PATH}"
+                    echo "Checking DIFF directory: ${DIFF_PATH}"
+                    
+                    FULL_FILES=$(gsutil ls "${FULL_PATH}*${DATE}*.bak" 2>/dev/null)
+                    DIFF_FILES=$(gsutil ls "${DIFF_PATH}*${DATE}*.bak" 2>/dev/null)
+                    
+                    FILES="${FULL_FILES} ${DIFF_FILES}"
+                    
                     if [[ -n "$FILES" ]]; then
                         echo "Found backup files: $FILES"
                         break
                     else
-                        echo "No backup files found for date: $DATE in $db_folder"
+                        echo "No backup files found for date: $DATE in ${FULL_PATH} and ${DIFF_PATH}"
                     fi
                 done
-
                 if [[ -n "$FILES" ]]; then
                     break
                 fi
