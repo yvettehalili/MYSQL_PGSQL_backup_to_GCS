@@ -13,14 +13,13 @@ DB_MAINTENANCE=ti_db_inventory
 
 # Environment Variables
 STORAGE=/root/cloudstorage
-BUCKET=tine-payroll-eu-prod-01
 
 # Date Range Variables for Checking Backups
 START_DATE="2024-09-07"
 END_DATE="2024-11-09"
 
 # SQL Query to Fetch Server Details
-query="SELECT name, ip, user, pwd, os, frequency, save_path, location, type FROM ti_db_inventory.servers WHERE active = 1 AND project = 'tine-payroll-prod-01' ORDER BY location, type, os;"
+query="SELECT name, ip, user, pwd, os, frequency, save_path, location, type, bucket FROM ti_db_inventory.servers WHERE active = 1 AND project = 'tine-payroll-prod-01' ORDER BY location, type, os;"
 
 clear
 
@@ -39,10 +38,6 @@ read_fields() {
     IFS= read -r "$1" <<< "$input"
 }
 
-# Mount storage for tine-payroll-prod-01
-echo "Mounting bucket for project tine-payroll-prod-01"
-gcsfuse --key-file=/root/jsonfiles/tine-payroll-prod-01.json $BUCKET $STORAGE || { echo "Error mounting gcsfuse for tine-payroll-prod-01"; exit 1; }
-
 # Iterate over each date in the range
 current_date=$START_DATE
 while [[ "$current_date" < "$END_DATE" || "$current_date" == "$END_DATE" ]]; do
@@ -55,7 +50,7 @@ while [[ "$current_date" < "$END_DATE" || "$current_date" == "$END_DATE" ]]; do
     echo "============================================================================================================"
 
     # Fetch and iterate over server details from the database
-    mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MAINTENANCE | while IFS=$'\t' read_fields SERVER SERVERIP WUSER WUSERP OS SAVE_PATH LOCATION TYPE_EXTRA
+    mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MAINTENANCE | while IFS=$'\t' read_fields SERVER SERVERIP WUSER WUSERP OS SAVE_PATH LOCATION TYPE_EXTRA BUCKET
     do
         # Extract the actual TYPE from the TYPE_EXTRA (assume TYPE_EXTRA is the last field)
         TYPE=$(echo "$TYPE_EXTRA" | awk '{print $NF}')
@@ -70,6 +65,10 @@ while [[ "$current_date" < "$END_DATE" || "$current_date" == "$END_DATE" ]]; do
         
         SIZE=0
         FILENAMES=()
+
+        # Mount the specific bucket for the server
+        echo "Mounting bucket for project tine-payroll-prod-01: $BUCKET"
+        gcsfuse --key-file=/root/jsonfiles/tine-payroll-prod-01.json $BUCKET $STORAGE || { echo "Error mounting gcsfuse for $SERVER"; continue; }
 
         # Handle MSSQL separately due to different backup structure
         if [[ "$TYPE" == "MSSQL" ]]; then
@@ -132,14 +131,14 @@ while [[ "$current_date" < "$END_DATE" || "$current_date" == "$END_DATE" ]]; do
         else
             echo "Skipping non-MSSQL server: $SERVER"
         fi
+
+        # Unmount storage for this iteration
+        fusermount -u $STORAGE || { echo "Error unmounting $STORAGE"; }
+
     done
     
     # Increment the date by one day
     current_date=$(date -I -d "$current_date + 1 day")
 done
 
-echo "Unmounting storage for tine-payroll-prod-01"
-fusermount -u $STORAGE || { echo "Error unmounting $STORAGE"; exit 1; }
-
 echo "tine-payroll-prod-01 script completed successfully."
-
