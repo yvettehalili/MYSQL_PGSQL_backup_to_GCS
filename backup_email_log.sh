@@ -1,51 +1,53 @@
 #!/bin/bash
 
 # Maintenance Access
-DB_USER="trtel.backup"
-DB_PASS="Telus2017#"
 DB_MAINTENANCE="ti_db_inventory"
 CUR_DATE=$(date +"%Y-%m-%d")
 DIR="backup"
 
+# Create Directory if not exists
+mkdir -p "${DIR}"
+
+# Define the function to generate queries
 function generateQuery {
         local serverType="${1}"
         local locationConstraint="${2}"
 
-        local queryStr="select @rownum := @rownum + 1 AS No, server as Server, "
-        queryStr+="(case when (truncate((size / 1024),0) > 0) then "
-        queryStr+="(case when (truncate(((size / 1024) / 1024),0) > 0) then "
-        queryStr+="truncate(((size / 1024) / 1024),2) "
-        queryStr+="else truncate((size / 1024),2) end) "
-        queryStr+="else size end) AS size, "
-        queryStr+="(case when (truncate((sizee / 1024),0) > 0) then "
-        queryStr+="(case when (truncate(((size / 1024) / 1024),0) > 0) "
-        queryStr+="then 'MB' else 'KB' end) else 'B' end) AS size_name, "
-        queryStr+="s.location Location, s.type DB_engine, s.os OS, "
-        queryStr+="case when size > 0 then 'No' else 'Yes' end as Error "
-        queryStr+="from daily_log b "
-        queryStr+="join servers s on s.name = b.server, "
+        local queryStr="SELECT @rownum := @rownum + 1 AS No, server AS Server, "
+        queryStr+="(CASE WHEN (TRUNCATE((size / 1024), 0) > 0) THEN "
+        queryStr+="(CASE WHEN (TRUNCATE(((size / 1024) / 1024), 0) > 0) THEN "
+        queryStr+="TRUNCATE(((size / 1024) / 1024), 2) "
+        queryStr+="ELSE TRUNCATE((size / 1024), 2) END) "
+        queryStr+="ELSE size END) AS size, "
+        queryStr+="(CASE WHEN (TRUNCATE((size / 1024), 0) > 0) THEN "
+        queryStr+="(CASE WHEN (TRUNCATE(((size / 1024) / 1024), 0) > 0) "
+        queryStr+="THEN 'MB' ELSE 'KB' END) ELSE 'B' END) AS size_name, "
+        queryStr+="s.location AS Location, s.type AS DB_engine, s.os AS OS, "
+        queryStr+="CASE WHEN size > 0 THEN 'No' ELSE 'Yes' END AS Error "
+        queryStr+="FROM daily_log b "
+        queryStr+="JOIN servers s ON s.name = b.server, "
         queryStr+="(SELECT @rownum := 0) r "
-        queryStr+="where backup_date = cast(now() as date) ${locationConstraint} and s.type='${serverType}'"
-        queryStr+="order by s.type desc; "
+        queryStr+="WHERE backup_date = CAST(NOW() AS DATE) ${locationConstraint} AND s.type='${serverType}'"
+        queryStr+="ORDER BY s.type DESC; "
 
         echo "${queryStr}"
 }
-# Clear the screen
+
+# Clear the terminal screen
 clear
 
 # Generate Queries
-
-queryMySQL=$(generateQuery "MYSQL" "and location='GCP'")
-queryPOSQL=$(generateQuery "POSQL" "and location='GCP'")
-queryMSSQL=$(generateQuery "MSSQL" "and location='GCP'")
+queryMySQL=$(generateQuery "MYSQL" "AND location='GCP'")
+queryPOSQL=$(generateQuery "POSQL" "AND location='GCP'")
+queryMSSQL=$(generateQuery "MSSQL" "AND location='GCP'")
 
 # Email Content
-emailFile="/${DIR}/yvette_email_notification.txt"
+emailFile="${DIR}/yvette_email_notification.txt"
 {
         echo "To: yvette.halili@telusinternational.com"
         echo "From: no-reply@telusinternational.com"
         echo "MIME-Version: 1.0"
-        echo "Content-type: text/html; charset=utf-8"
+        echo "Content-Type: text/html; charset=utf-8"
         echo "Subject: Daily Backup Report - ${CUR_DATE}"
 
         echo "<!DOCTYPE html>"
@@ -66,8 +68,8 @@ emailFile="/${DIR}/yvette_email_notification.txt"
         echo "  border-bottom: 2px solid #4B286D;" # Telus Purple
         echo "}"
 
-        echo "h1 {color: #4B286D;}" # Telus Purple
-        echo "h2 {color: #6C77A1;}" # Telus Secondary Purple
+        echo "h1 { color: #4B286D; }" # Telus Purple
+        echo "h2 { color: #6C77A1; }" # Telus Secondary Purple
 
         echo "table {"
         echo "  width: 100%;"
@@ -106,25 +108,22 @@ emailFile="/${DIR}/yvette_email_notification.txt"
 } > "${emailFile}"
 
 # Header
-echo " <h1 align="center">Daily Backup Report ${CUR_DATE}</h1>" >> "${emailFile}"
+echo " <h1 align=\"center\">Daily Backup Report ${CUR_DATE}</h1>" >> "${emailFile}"
 
 # GCP Backup Information - MYSQL
 echo "<h1>GCP Backup Information - MYSQL</h1>" >> "${emailFile}"
-/usr/bin/mysql --defaults-group-suffix=bk ${DB_MAINTENANCE} -H -e "${queryMySQL}" >> "${emailFile}"
-#mysql --defaults-group-suffix=bk ${DB_MAINTENANCE} -H -e "${queryMySQL}" >> "${emailFile}"
+mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -H -e "${queryMySQL}" >> "${emailFile}"
 
 # GCP Backup Information - POSTGRES
 echo "<h1>GCP Backup Information - POSTGRES</h1>" >> "${emailFile}"
-/usr/bin/mysql --defaults-group-suffix=bk ${DB_MAINTENANCE} -H -e "${queryPOSQL}" >> "${emailFile}"
-#mysql --defaults-group-suffix=bk ${DB_MAINTENANCE} -H -e "${queryPOSQL}" >> "${emailFile}"
+mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -H -e "${queryPOSQL}" >> "${emailFile}"
 
 # GCP Backup Information - MSSQL
 echo "<h1>GCP Backup Information - MSSQL</h1>" >> "${emailFile}"
-/usr/bin/mysql --defaults-group-suffix=bk ${DB_MAINTENANCE} -H -e "${queryMSSQL}" >> "${emailFile}"
-#mysql --defaults-group-suffix=bk ${DB_MAINTENANCE} -H -e "${queryMSSQL}" >> "${emailFile}"
+mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -H -e "${queryMSSQL}" >> "${emailFile}"
 
 # Close HTML Tags
 echo "</body></html>" >> "${emailFile}"
+
 # Send Email
-#ssmtp -t < "${emailFile}"
 /usr/sbin/ssmtp -t < "${emailFile}"
