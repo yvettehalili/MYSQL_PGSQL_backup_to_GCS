@@ -1,125 +1,129 @@
 #!/bin/bash
 
-# Ensure required commands are available
-command -v gcsfuse >/dev/null 2>&1 || { echo >&2 "gcsfuse command not found. Please install gcsfuse."; exit 1; }
-command -v fusermount >/dev/null 2>&1 || { echo >&2 "fusermount command not found. Please install fuse."; exit 1; }
-
-# Database Credentials
-DB_USER=trtel.backup
-DB_PASS='Telus2017#'
-DB_MAINTENANCE=ti_db_inventory
-
-# Environment Variables
-STORAGE=/root/cloudstorage
-BUCKET=ti-dba-prod-sql-01
-PROJECT_NAME=ti-dba-prod-01
-
-# Current Date Variables
+# Maintenance Access
+DB_MAINTENANCE="ti_db_inventory"
 CUR_DATE=$(date +"%Y-%m-%d")
-CUR_DATE2=$(date -d "$CUR_DATE" +"%Y%m%d")
-CUR_DATE3=$(date -d "$CUR_DATE" +"%d-%m-%Y")
+DIR="backup"
 
-# SQL Query to Fetch Server Details
-query="SELECT name, ip, user, pwd, os, frecuency, save_path, location, type FROM ti_db_inventory.servers WHERE active=1 ORDER BY location, type, os"
+# Create Directory if not exists
+mkdir -p "${DIR}"
 
-clear
+# Define the function to generate queries
+function generateQuery {
+    local serverType="${1}"
+    local locationConstraint="${2}"
 
-echo "============================================================================================================"
-echo "START DATE: $CUR_DATE ....................................................................................."
-echo "============================================================================================================"
+    local queryStr="SELECT @rownum := @rownum + 1 AS No, b.server AS Server, "
+    queryStr+="(CASE WHEN (TRUNCATE((b.size / 1024), 0) > 0) THEN "
+    queryStr+="(CASE WHEN (TRUNCATE(((b.size / 1024) / 1024), 0) > 0) THEN "
+    queryStr+="TRUNCATE(((b.size / 1024) / 1024), 2) "
+    queryStr+="ELSE TRUNCATE((b.size / 1024), 2) END) "
+    queryStr+="ELSE b.size END) AS size, "
+    queryStr+="(CASE WHEN (TRUNCATE((b.size / 1024), 0) > 0) THEN "
+    queryStr+="(CASE WHEN (TRUNCATE(((b.size / 1024) / 1024), 0) > 0) "
+    queryStr+="THEN 'MB' ELSE 'KB' END) ELSE 'B' END) AS size_name, "
+    queryStr+="s.location AS Location, s.type AS DB_engine, s.os AS OS, "
+    queryStr+="CASE WHEN b.size > 0 THEN 'No' ELSE 'Yes' END AS Error "
+    queryStr+="FROM daily_log b "
+    queryStr+="JOIN servers s ON s.name = b.server, "
+    queryStr+="(SELECT @rownum := 0) r "
+    queryStr+="WHERE b.backup_date = CAST(NOW() AS DATE) ${locationConstraint} AND s.type='${serverType}'"
+    queryStr+="ORDER BY s.type DESC; "
 
-# Create the storage directory if it does not exist
-mkdir -p $STORAGE
-
-# Mount the Google Cloud bucket using gcsfuse
-gcsfuse --project $PROJECT_NAME --key-file=/root/jsonfiles/$PROJECT_NAME.json $BUCKET $STORAGE
-
-# Function to Prevent Collapsing of Empty Fields
-myread() {
-    local input
-    IFS= read -r input || return $?
-    while (( $# > 1 )); do
-        IFS= read -r "$1" <<< "${input%%[$IFS]*}"
-        input="${input#*[$IFS]}"
-        shift
-    done
-    IFS= read -r "$1" <<< "$input"
+    echo "${queryStr}"
 }
 
-# Fetch server details from the database and iterate over each server
-mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MAINTENANCE | while IFS=$'\t' myread SERVER SERVERIP WUSER WUSERP OS FRECUENCY SAVEPATH LOCATION TYPE;
-do
-    echo "============================================================================================================"
-    echo "SERVER: $SERVER - $SERVERIP - $OS - $TYPE - $SAVEPATH - $LOCATION"
-    echo "============================================================================================================"
-    echo "Checking backups for SERVER: $SERVER on DATE: $CUR_DATE"
+# Clear the terminal screen
+clear
 
-    BACKUP_PATH=""
+# Generate Queries
+queryMySQL=$(generateQuery "MYSQL" "AND s.location='GCP'")
+queryPOSQL=$(generateQuery "POSQL" "AND s.location='GCP'")
+queryMSSQL=$(generateQuery "MSSQL" "AND s.location='GCP'")
 
-    case "$TYPE" in
-        MYSQL)
-            BACKUP_PATH="Backups/Current/MYSQL/$SERVER/"
-            ;;
-        PGSQL)
-            BACKUP_PATH="Backups/Current/POSTGRESQL/$SERVER/"
-            ;;
-        MSSQL)
-            BACKUP_PATH="Backups/Current/MSSQL/$SERVER/"
-            ;;
-        *)
-            echo "Unsupported database type: $TYPE"
-            continue
-            ;;
-    esac
+# Email Content
+emailFile="${DIR}/yvette_email_notification.txt"
+{
+    echo "To: yvette.halili@telusinternational.com"
+    echo "From: no-reply@telusinternational.com"
+    echo "MIME-Version: 1.0"
+    echo "Content-Type: text/html; charset=utf-8"
+    echo "Subject: Daily Backup Report - ${CUR_DATE}"
 
-    SIZE=0
-    DATABASE=""
-    
-    # Check for files with CUR_DATE
-    FILES=$(gsutil -u $PROJECT_NAME ls "gs://$BUCKET/$BACKUP_PATH*${CUR_DATE}*.sql.gz" 2>/dev/null)
-    if [[ -z "$FILES" ]]; then
-        # Check for files with CUR_DATE2
-        FILES=$(gsutil -u $PROJECT_NAME ls "gs://$BUCKET/$BACKUP_PATH*${CUR_DATE2}*.sql.gz" 2>/dev/null)
-    fi
-    if [[ -z "$FILES" ]]; then
-        # Check for files with CUR_DATE3
-        FILES=$(gsutil -u $PROJECT_NAME ls "gs://$BUCKET/$BACKUP_PATH*${CUR_DATE3}*.sql.gz" 2>/dev/null)
-    fi
-    
-    for FILE in $FILES; do
-        fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
-        SIZE=$((SIZE + fsize))
-        
-        # Extract database name from the file name
-        FILENAME=$(basename "$FILE")
-        if [[ "$FILENAME" =~ ^(${CUR_DATE}|${CUR_DATE2}|${CUR_DATE3})_(.*)\.sql\.gz$ ]]; then
-            DATABASE="${BASH_REMATCH[2]}"
-        fi
-    done
+    echo "<!DOCTYPE html>"
+    echo "<html lang='en'>"
+    echo "<head>"
+    echo "<style>"
 
-    endcopy=$(date +"%Y-%m-%d %H:%M:%S")
-    STATE="Completed"
-    if [ "$SIZE" -eq 0 ]; then
-        STATE="Error"
-    fi
+    echo "body {"
+    echo "  font-family: 'Segoe UI', Arial, sans-serif;"
+    echo "  background-color: #f4f4f4;"
+    echo "  margin: 0;"
+    echo "  padding: 20px;"
+    echo "}"
 
-    # Insert or update the daily log with the backup status
-    IQUERY="INSERT INTO daily_log (backup_date, server, database, size, state, last_update) 
-            VALUES ('$CUR_DATE', '$SERVER', '$DATABASE', $SIZE, '$STATE', '$endcopy') 
-            ON DUPLICATE KEY UPDATE size=$SIZE, state='$STATE', last_update='$endcopy';"
-    mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$IQUERY"
-    
-    # Insert details into the backup log
-    for FILE in $FILES; do
-        fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
-        SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath) 
-                VALUES ('$CUR_DATE','$SERVER',$fsize,'$FILE')
-                ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize;"
-        mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$SQUERY"
-    done
-done
+    echo "h1, h2 {"
+    echo "  margin: 0 0 10px;"
+    echo "  padding-bottom: 5px;"
+    echo "  border-bottom: 2px solid #4B286D;" # Telus Purple
+    echo "}"
 
-# Unmount the cloud storage
-fusermount -uz $STORAGE
+    echo "h1 { color: #4B286D; }" # Telus Purple
+    echo "h2 { color: #6C77A1; }" # Telus Secondary Purple
 
-printf "done\n"
+    echo "table {"
+    echo "  width: 100%;"
+    echo "  border-collapse: collapse;"
+    echo "  background-color: #fff;"
+    echo "  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);"
+    echo "  margin-bottom: 20px;"
+    echo "}"
+
+    echo "th {"
+    echo "  background-color: #4B286D;"
+    echo "  color: #ffffff;"
+    echo "  padding: 15px;"
+    echo "  font-weight: normal;"
+    echo "  text-transform: uppercase;"
+    echo "}"
+
+    echo "td {"
+    echo "  padding: 10px;"
+    echo "  text-align: left;"
+    echo "  border-bottom: 1px solid #ddd;"
+    echo "  transition: background-color 0.3s;"
+    echo "}"
+
+    echo "tr:nth-child(even) {"
+    echo "  background-color: #f9f9f9;" # Very light grey for even rows
+    echo "}"
+
+    echo "tr:hover {"
+    echo "  background-color: #e1e1e1;" # A more pronounced grey for row hover
+    echo "}"
+
+    echo "</style>"
+    echo "</head>"
+    echo "<body>"
+} > "${emailFile}"
+
+# Header
+echo " <h1 align=\"center\">Daily Backup Report ${CUR_DATE}</h1>" >> "${emailFile}"
+
+# GCP Backup Information - MYSQL
+echo "<h1>GCP Backup Information - MYSQL</h1>" >> "${emailFile}"
+mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -H -e "${queryMySQL}" >> "${emailFile}"
+
+# GCP Backup Information - POSTGRES
+echo "<h1>GCP Backup Information - POSTGRES</h1>" >> "${emailFile}"
+mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -H -e "${queryPOSQL}" >> "${emailFile}"
+
+# GCP Backup Information - MSSQL
+echo "<h1>GCP Backup Information - MSSQL</h1>" >> "${emailFile}"
+mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -H -e "${queryMSSQL}" >> "${emailFile}"
+
+# Close HTML Tags
+echo "</body></html>" >> "${emailFile}"
+
+# Send Email
+/usr/sbin/ssmtp -t < "${emailFile}"
