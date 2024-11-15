@@ -164,7 +164,7 @@ def main():
                 logging.warning("No databases found for server: {}".format(SERVER))
                 continue
             for db in db_list:
-                if db in ["db_osticket_security_global", "db_ost_marketing_global"]:
+                if db in ["db_osticket_security_global", "db_ost_marketing_global", "sta_telus_outbound"]:
                     logging.info("Skipping backup for database: {}".format(db))
                     continue
                 logging.info("Backing up database: {}".format(db))
