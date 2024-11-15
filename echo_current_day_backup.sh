@@ -18,10 +18,23 @@ TODAY=$(date +"%Y-%m-%d")
 TODAY2=$(date -d "$TODAY" +"%Y%m%d")
 TODAY3=$(date -d "$TODAY" +"%d-%m-%Y")
 
-# SQL Query to Fetch Server Details
-query="SELECT name, ip, user, pwd, os, frequency, save_path, location, type FROM ti_db_inventory.servers WHERE active=1 ORDER BY location, type, os"
+# SQL Query to Fetch Server Details, excluding specified projects
+query="SELECT name, ip, user, pwd, os, frequency, save_path, location, type 
+      FROM ti_db_inventory.servers 
+      WHERE active=1 
+      AND project NOT IN ('ti-verint152prod', 'tine-payroll-prod-01')
+      ORDER BY location, type, os"
 
 clear
+echo "============================================================================================================"
+echo "Fetching active servers on DATE: $TODAY"
+echo "============================================================================================================"
+
+# Fetch and print server details to ensure they are being fetched correctly
+servers=$(mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MAINTENANCE)
+echo "Fetched Servers:"
+echo "$servers"
+echo "============================================================================================================"
 
 # Create the storage directory if it does not exist
 mkdir -p $STORAGE
@@ -49,8 +62,7 @@ echo "START DATE: $TODAY .......................................................
 echo "============================================================================================================"
 
 # Fetch server details from the database and iterate over each server
-mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MAINTENANCE | while IFS=$'\t' read_fields SERVER SERVERIP WUSER WUSERP OS SAVE_PATH LOCATION TYPE_EXTRA;
-do
+echo "$servers" | while IFS=$'\t' read_fields SERVER SERVERIP WUSER WUSERP OS SAVE_PATH LOCATION TYPE_EXTRA; do
     # Extract the actual TYPE from the TYPE_EXTRA (assume TYPE_EXTRA is the last field)
     TYPE=$(echo "$TYPE_EXTRA" | awk '{print $NF}')
     
@@ -136,14 +148,14 @@ do
             FILENAMES+=("$FILENAME")
             case "$TYPE" in
                 MYSQL)
-                    if [[ "$FILENAME" =~ ^(${TODAY}|${TODAY2}|${TODAY3})_(db_.*)\.sql\.gz$ ]]; then
+                    if [[ "$FILENAME" =~ ^(${TODAY}|${TODAY2}|${TODAY3})_(db_.*)\. sql\.gz$ ]]; then
                         DATABASE="${BASH_REMATCH[2]}"
-                    elif [[ "$FILENAME" =~ ^(${TODAY}|${TODAY2}|${TODAY3})_(.*)\.sql\.gz$ ]]; then
+                    elif [[ "$FILENAME" =~ ^(${TODAY}|${TODAY2}|${TODAY3})_(.*)\. sql\.gz$ ]]; then
                         DATABASE="${BASH_REMATCH[2]}"
                     fi
                     ;;
                 PGSQL)
-                    if [[ "$FILENAME" =~ ^(${TODAY}|${TODAY2}|${TODAY3})_(.*)\.dump$ ]]; then
+                    if [[ "$FILENAME" =~ ^(${TODAY}|${TODAY2}|${TODAY3})_(.*)\. dump$ ]]; then
                         DATABASE="${BASH_REMATCH[2]}"
                     fi
                     ;;
