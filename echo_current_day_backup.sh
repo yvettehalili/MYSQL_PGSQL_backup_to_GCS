@@ -61,6 +61,45 @@ echo "==========================================================================
 echo "START DATE: $TODAY .........................................................................................."
 echo "============================================================================================================"
 
+# Function to fetch backup files and echo details
+fetch_backup_files() {
+  local BACKUP_PATH="$1"
+  local EXTENSION="$2"
+
+  FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TODAY}*${EXTENSION}" 2>/dev/null)
+  if [[ -z "$FILES" ]]; then
+      FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TODAY2}*${EXTENSION}" 2>/dev/null)
+  fi
+  if [[ -z "$FILES" ]]; then
+      FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TODAY3}*${EXTENSION}" 2>/dev/null)
+  fi
+
+  for FILE in $FILES; do
+      fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
+      SIZE=$((SIZE + fsize))
+
+      # Extract database name and filename from the full file path
+      FILENAME=$(basename "$FILE")
+      case "$TYPE" in
+          MYSQL)
+              if [[ "$FILENAME" =~ ^(${TODAY}|${TODAY2}|${TODAY3})_(db_.*)\.sql\.gz$ ]]; then
+                  DATABASE="${BASH_REMATCH[2]}"
+              elif [[ "$FILENAME" =~ ^(${TODAY}|${TODAY2}|${TODAY3})_(.*)\.sql\.gz$ ]]; then
+                  DATABASE="${BASH_REMATCH[2]}"
+              fi
+              ;;
+          PGSQL)
+              if [[ "$FILENAME" =~ ^(${TODAY}|${TODAY2}|${TODAY3})_(.*)\.dump$ ]]; then
+                  DATABASE="${BASH_REMATCH[2]}"
+              fi
+              ;;
+      esac
+
+      # Echo details instead of logging
+      echo "Found backup: (date: $TODAY, server: $SERVER, size: $fsize, file: $FILE, database: $DATABASE)"
+  done
+}
+
 # Fetch server details from the database and iterate over each server
 echo "$servers" | while IFS=$'\t' read_fields SERVER SERVERIP WUSER WUSERP OS SAVE_PATH LOCATION TYPE_EXTRA; do
     # Extract the actual TYPE from the TYPE_EXTRA (assume TYPE_EXTRA is the last field)
@@ -79,92 +118,50 @@ echo "$servers" | while IFS=$'\t' read_fields SERVER SERVERIP WUSER WUSERP OS SA
     case "$TYPE" in
         MYSQL)
             BACKUP_PATH="Backups/Current/MYSQL/$SERVER/"
-            EXTENSION="*.sql.gz"
+            EXTENSION=".sql.gz"
+            fetch_backup_files "$BACKUP_PATH" "$EXTENSION"
             ;;
         PGSQL)
             BACKUP_PATH="Backups/Current/POSTGRESQL/$SERVER/"
-            EXTENSION="*.dump"
+            EXTENSION=".dump"
+            fetch_backup_files "$BACKUP_PATH" "$EXTENSION"
             ;;
         MSSQL)
             BACKUP_PATH="Backups/Current/MSSQL/$SERVER/"
+            EXTENSION=".bak"
+            
+            SIZE=0
+
+            # Check for files with TODAY variants
+            for DATE in "$TODAY" "$TODAY2" "$TODAY3"; do
+                FILES=$(gsutil ls "gs://$BUCKET/${BACKUP_PATH}*/DIFF/*${DATE}*.bak" 2>/dev/null)
+                FILES+=$(gsutil ls "gs://$BUCKET/${BACKUP_PATH}*/FULL/*${DATE}*.bak" 2>/dev/null)
+
+                if [[ -n "$FILES" ]]; then
+                    break
+                fi
+            done
+
+            for FILE in $FILES; do
+                fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
+                SIZE=$((SIZE + fsize))
+
+                # Extract database name and filename from the full file path
+                FILENAME=$(basename "$FILE")
+
+                if [[ "$FILENAME" =~ ^${SERVER}_(.*)_(DIFF|FULL)_(.*)\.bak$ ]]; then
+                    DB_NAME="${BASH_REMATCH[1]}"
+                fi
+                
+                # Echo details instead of logging
+                echo "Found backup: (date: $TODAY, server: $SERVER, size: $fsize, file: $FILE, database: $DB_NAME)"
+            done
             ;;
         *)
             echo "Unsupported database type: $TYPE"
             continue
             ;;
     esac
-
-    # Handle MSSQL separately due to different backup structure
-    if [[ "$TYPE" == "MSSQL" ]]; then
-        SIZE=0
-
-        # Check for files with TODAY variants
-        for DATE in "$TODAY" "$TODAY2" "$TODAY3"; do
-            FILES=$(gsutil ls "gs://$BUCKET/${BACKUP_PATH}*/DIFF/*${DATE}*.bak" 2>/dev/null)
-            FILES+=$(gsutil ls "gs://$BUCKET/${BACKUP_PATH}*/FULL/*${DATE}*.bak" 2>/dev/null)
-
-            if [[ -n "$FILES" ]]; then
-                break
-            fi
-        done
-
-        FILENAMES=()
-
-        for FILE in $FILES; do
-            fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
-            SIZE=$((SIZE + fsize))
-
-            # Extract database name and filename from the full file path
-            FILENAME=$(basename "$FILE")
-            FILENAMES+=("$FILENAME")
-
-            if [[ "$FILENAME" =~ ^${SERVER}_(.*)_(DIFF|FULL)_(.*)\.bak$ ]]; then
-                DB_NAME="${BASH_REMATCH[1]}"
-            fi
-            
-            # Echo details instead of logging
-            echo "Found backup: (date: $TODAY, server: $SERVER, size: $fsize, file: $FILE, database: $DB_NAME)"
-        done
-
-    else
-        SIZE=0
-        FILENAMES=()
-
-        # Check for files with TODAY variants
-        FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TODAY}*.${EXTENSION##*.}" 2>/dev/null)
-        if [[ -z "$FILES" ]]; then
-            FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TODAY2}*.${EXTENSION##*.}" 2>/dev/null)
-        fi
-        if [[ -z "$FILES" ]]; then
-            FILES=$(gsutil ls "gs://$BUCKET/$BACKUP_PATH*${TODAY3}*.${EXTENSION##*.}" 2>/dev/null)
-        fi
-
-        for FILE in $FILES; do
-            fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
-            SIZE=$((SIZE + fsize))
-
-            # Extract database name and filename from the full file path
-            FILENAME=$(basename "$FILE")
-            FILENAMES+=("$FILENAME")
-            case "$TYPE" in
-                MYSQL)
-                    if [[ "$FILENAME" =~ ^(${TODAY}|${TODAY2}|${TODAY3})_(db_.*)\.sql\.gz$ ]]; then
-                        DATABASE="${BASH_REMATCH[2]}"
-                    elif [[ "$FILENAME" =~ ^(${TODAY}|${TODAY2}|${TODAY3})_(.*)\.sql\.gz$ ]]; then
-                        DATABASE="${BASH_REMATCH[2]}"
-                    fi
-                    ;;
-                PGSQL)
-                    if [[ "$FILENAME" =~ ^(${TODAY}|${TODAY2}|${TODAY3})_(.*)\.dump$ ]]; then
-                        DATABASE="${BASH_REMATCH[2]}"
-                    fi
-                    ;;
-            esac
-
-            # Echo details instead of logging
-            echo "Found backup: (date: $TODAY, server: $SERVER, size: $fsize, file: $FILE, database: $DATABASE)"
-        done
-    fi
 done
 
 # Unmount the cloud storage
