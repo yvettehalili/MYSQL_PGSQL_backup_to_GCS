@@ -148,14 +148,14 @@ echo "$servers" | while IFS=$'\t' read_fields SERVER SERVERIP WUSER WUSERP OS SA
             FILENAMES+=("$FILENAME")
             case "$TYPE" in
                 MYSQL)
-                    if [[ "$FILENAME" =~ ^(${TODAY}|${TODAY2}|${TODAY3})_(db_.*)\. sql\.gz$ ]]; then
+                    if [[ "$FILENAME" =~ ^(${TODAY}|${TODAY2}|${TODAY3})_(db_.*)\.sql\.gz$ ]]; then
                         DATABASE="${BASH_REMATCH[2]}"
-                    elif [[ "$FILENAME" =~ ^(${TODAY}|${TODAY2}|${TODAY3})_(.*)\. sql\.gz$ ]]; then
+                    elif [[ "$FILENAME" =~ ^(${TODAY}|${TODAY2}|${TODAY3})_(.*)\.sql\.gz$ ]]; then
                         DATABASE="${BASH_REMATCH[2]}"
                     fi
                     ;;
                 PGSQL)
-                    if [[ "$FILENAME" =~ ^(${TODAY}|${TODAY2}|${TODAY3})_(.*)\. dump$ ]]; then
+                    if [[ "$FILENAME" =~ ^(${TODAY}|${TODAY2}|${TODAY3})_(.*)\.dump$ ]]; then
                         DATABASE="${BASH_REMATCH[2]}"
                     fi
                     ;;
