@@ -56,21 +56,25 @@ do
         echo "Checking backups for SERVER: $SERVER on DATE: $TARGET_DATE"
 
         BACKUP_PATH="Backups/Current/MSSQL/$SERVER/"
-        echo "Backup path being checked: $BACKUP_PATH"
-        
+
         SIZE=0
         FILENAMES=()
 
-        # List all database directories (including subdirectories) under the server
-        for DB_FOLDER in $(gsutil ls -d "gs://$BUCKET/$BACKUP_PATH/**" | grep '/$'); do
+        # List all database directories and subdirectories under the server
+        for DB_FOLDER in $(gsutil ls -d "gs://$BUCKET/$BACKUP_PATH*/" | grep '/$'); do
             DB_FULL_PATH="${DB_FOLDER}FULL/"
             DB_DIFF_PATH="${DB_FOLDER}DIFF/"
             echo "Checking FULL directory: ${DB_FULL_PATH}"
             echo "Checking DIFF directory: ${DB_DIFF_PATH}"
                 
             # Aggregate file lists from FULL and DIFF directories
-            FILES=$(gsutil ls "${DB_FULL_PATH}*${DATE}*.bak" 2>/dev/null)
-            FILES+=$(gsutil ls "${DB_DIFF_PATH}*${DATE}*.bak" 2>/dev/null)
+            FILES=$(gsutil ls "${DB_FULL_PATH}*${DATE_FORMATTED1}*.bak" 2>/dev/null)
+            FILES+=$(gsutil ls "${DB_FULL_PATH}*${DATE_FORMATTED2}*.bak" 2>/dev/null)
+            FILES+=$(gsutil ls "${DB_FULL_PATH}*${TARGET_DATE}*.bak" 2>/dev/null)
+
+            FILES+=$(gsutil ls "${DB_DIFF_PATH}*${DATE_FORMATTED1}*.bak" 2>/dev/null)
+            FILES+=$(gsutil ls "${DB_DIFF_PATH}*${DATE_FORMATTED2}*.bak" 2>/dev/null)
+            FILES+=$(gsutil ls "${DB_DIFF_PATH}*${TARGET_DATE}*.bak" 2>/dev/null)
                 
             if [[ -n "$FILES" ]]; then
                 echo "Found backup files: $FILES"
@@ -109,7 +113,7 @@ do
                     mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$DQUERY"
                 done
             else
-                echo "No backup files found for date: $DATE in ${DB_FULL_PATH} and ${DB_DIFF_PATH}"
+                echo "No backup files found for date: $TARGET_DATE in ${DB_FULL_PATH} and ${DB_DIFF_PATH}"
             fi
         done
     fi  # End of server name check
