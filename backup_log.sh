@@ -1,8 +1,10 @@
 #!/bin/bash
 
 # Maintenance Access
+DB_USER="trtel.backup"
+DB_PASS="Telus2017#"
 DB_MAINTENANCE="ti_db_inventory"
-CUR_DATE=$(date +"%Y-%m-%d")
+REPORT_DATE="2024-11-17"
 DIR="backup"
 
 # Create Directory if not exists
@@ -27,7 +29,7 @@ function generateQuery {
     queryStr+="FROM daily_log b "
     queryStr+="JOIN servers s ON s.name = b.server, "
     queryStr+="(SELECT @rownum := 0) r "
-    queryStr+="WHERE b.backup_date = CAST(NOW() AS DATE) ${locationConstraint} AND s.type='${serverType}'"
+    queryStr+="WHERE b.backup_date = '${REPORT_DATE}' ${locationConstraint} AND s.type='${serverType}'"
     queryStr+="ORDER BY s.type DESC; "
 
     echo "${queryStr}"
@@ -38,7 +40,7 @@ clear
 
 # Generate Queries
 queryMySQL=$(generateQuery "MYSQL" "AND s.location='GCP'")
-queryPOSQL=$(generateQuery "POSQL" "AND s.location='GCP'")
+queryPGSQL=$(generateQuery "PGSQL" "AND s.location='GCP'")
 queryMSSQL=$(generateQuery "MSSQL" "AND s.location='GCP'")
 
 # Email Content
@@ -48,7 +50,7 @@ emailFile="${DIR}/yvette_email_notification.txt"
     echo "From: no-reply@telusinternational.com"
     echo "MIME-Version: 1.0"
     echo "Content-Type: text/html; charset=utf-8"
-    echo "Subject: Daily Backup Report - ${CUR_DATE}"
+    echo "Subject: Daily Backup Report - ${REPORT_DATE}"
 
     echo "<!DOCTYPE html>"
     echo "<html lang='en'>"
@@ -108,15 +110,15 @@ emailFile="${DIR}/yvette_email_notification.txt"
 } > "${emailFile}"
 
 # Header
-echo " <h1 align=\"center\">Daily Backup Report ${CUR_DATE}</h1>" >> "${emailFile}"
+echo "<h1 align=\"center\">Daily Backup Report ${REPORT_DATE}</h1>" >> "${emailFile}"
 
 # GCP Backup Information - MYSQL
 echo "<h1>GCP Backup Information - MYSQL</h1>" >> "${emailFile}"
 mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -H -e "${queryMySQL}" >> "${emailFile}"
 
 # GCP Backup Information - POSTGRES
-echo "<h1>GCP Backup Information - POSTGRES</h1>" >> "${emailFile}"
-mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -H -e "${queryPOSQL}" >> "${emailFile}"
+echo "<h1>GCP Backup Information - PGSQL</h1>" >> "${emailFile}"
+mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -H -e "${queryPGSQL}" >> "${emailFile}"
 
 # GCP Backup Information - MSSQL
 echo "<h1>GCP Backup Information - MSSQL</h1>" >> "${emailFile}"
