@@ -141,22 +141,27 @@ emailFile="${DIR}/yvette_email_notification.txt"
 appendSection() {
     local title=$1
     local query=$2
-
-    # Append the section title
+    
     echo "${title}" >> "${emailFile}"
-
-    # Run the query and process the results
-    mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -e "${query}" -H | sed 's/<table[^>]*>/<table>/;/<\/table>/Q' | sed '1d;$d' >> "${emailFile}"
+    
+    {
+        echo "<table>"
+        echo "<tr><th>No</th><th>Server</th><th>Size</th><th>Size Name</th><th>Location</th><th>DB Engine</th><th>OS</th><th>Error</th></tr>"
+        mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -e "${query}" --batch --skip-column-names | while IFS=$'\t' read -r No Server size size_name Location DB_engine OS Error; do
+            echo "<tr><td>${No}</td><td>${Server}</td><td>${size}</td><td>${size_name}</td><td>${Location}</td><td>${DB_engine}</td><td>${OS}</td><td>${Error}</td></tr>"
+        done
+        echo "</table>"
+    } >> "${emailFile}"
 }
 
 # GCP Backup Information - MYSQL
-appendSection "<h2>GCP Backup Information - MYSQL</h2><table><tr><th>No</th><th>Server</th><th>Size</th><th>Size Name</th><th>Location</th><th>DB Engine</th><th>OS</th><th>Error</th></tr>" "${queryMySQL}"
+appendSection "<h2>GCP Backup Information - MYSQL</h2>" "${queryMySQL}"
 
 # GCP Backup Information - PGSQL
-appendSection "<h2>GCP Backup Information - PGSQL</h2><table><tr><th>No</th><th>Server</th><th>Size</th><th>Size Name</th><th>Location</th><th>DB Engine</th><th>OS</th><th>Error</th></tr>" "${queryPGSQL}"
+appendSection "<h2>GCP Backup Information - PGSQL</h2>" "${queryPGSQL}"
 
 # GCP Backup Information - MSSQL
-appendSection "<h2>GCP Backup Information - MSSQL</h2><table><tr><th>No</th><th>Server</th><th>Size</th><th>Size Name</th><th>Location</th><th>DB Engine</th><th>OS</th><th>Error</th></tr>" "${queryMSSQL}"
+appendSection "<h2>GCP Backup Information - MSSQL</h2>" "${queryMSSQL}"
 
 # Close HTML Tags
 {
