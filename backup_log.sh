@@ -141,15 +141,12 @@ emailFile="${DIR}/yvette_email_notification.txt"
 appendSection() {
     local title=$1
     local query=$2
-    local tempFile=$(mktemp)
-    
-    echo "${title}" >> "${emailFile}"
-    mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -e "${query}" -H > "${tempFile}"
 
-    # Remove duplicates and format correctly
-    sed 's/<table[^>]*>/<table>/;/<\/table>/Q' "${tempFile}" | sed 's/<\/tr>/<\/tr><\/table>/' | tail -n +5 | head -n -4 >> "${emailFile}"
-    rm "${tempFile}"
-    echo "    </table>" >> "${emailFile}"
+    # Append the section title
+    echo "${title}" >> "${emailFile}"
+
+    # Run the query and process the results
+    mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -e "${query}" -H | sed 's/<table[^>]*>/<table>/;/<\/table>/Q' | sed '1d;$d' >> "${emailFile}"
 }
 
 # GCP Backup Information - MYSQL
