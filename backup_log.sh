@@ -11,7 +11,7 @@ DIR="backup"
 mkdir -p "${DIR}"
 
 # Define the function to generate queries
-generateQuery() {
+function generateQuery {
     local serverType="${1}"
     local locationConstraint="${2}"
 
@@ -56,78 +56,119 @@ emailFile="${DIR}/yvette_email_notification.txt"
     echo "<!DOCTYPE html>"
     echo "<html lang='en'>"
     echo "<head>"
-    echo "<style>"
-
-    echo "body {"
-    echo "  font-family: 'Segoe UI', Arial, sans-serif;"
-    echo "  background-color: #f4f4f4;"
-    echo "  margin: 0;"
-    echo "  padding: 20px;"
-    echo "}"
-
-    echo "h1, h2 {"
-    echo "  margin: 0 0 10px;"
-    echo "  padding-bottom: 5px;"
-    echo "  border-bottom: 2px solid #4B286D;" # Telus Purple
-    echo "}"
-
-    echo "h1 { color: #4B286D; }" # Telus Purple
-    echo "h2 { color: #6C77A1; }" # Telus Secondary Purple
-
-    echo "table {"
-    echo "  width: 100%;"
-    echo "  border-collapse: collapse;"
-    echo "  background-color: #fff;"
-    echo "  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);"
-    echo "  margin-bottom: 20px;"
-    echo "}"
-
-    echo "th {"
-    echo "  background-color: #4B286D;"
-    echo "  color: #ffffff;"
-    echo "  padding: 15px;"
-    echo "  font-weight: normal;"
-    echo "  text-transform: uppercase;"
-    echo "}"
-
-    echo "td {"
-    echo "  padding: 10px;"
-    echo "  text-align: left;"
-    echo "  border-bottom: 1px solid #ddd;"
-    echo "  transition: background-color 0.3s;"
-    echo "}"
-
-    echo "tr:nth-child(even) {"
-    echo "  background-color: #f9f9f9;" # Very light grey for even rows
-    echo "}"
-
-    echo "tr:hover {"
-    echo "  background-color: #e1e1e1;" # A more pronounced grey for row hover
-    echo "}"
-
-    echo "</style>"
+    echo "  <meta charset='UTF-8'>"
+    echo "  <meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+    echo "  <title>Daily Backup Report</title>"
+    echo "  <link rel='stylesheet' href='https://fonts.googleapis.com/css2?family=Poppins:wght@600&display=swap'>"
+    echo "  <style>"
+    echo "    body {"
+    echo "      font-family: 'Segoe UI', Arial, sans-serif;"
+    echo "      background-color: #f4f4f4;"
+    echo "      color: #333;"
+    echo "      margin: 0;"
+    echo "      padding: 20px;"
+    echo "    }"
+    echo "    .container {"
+    echo "      max-width: 1000px;"
+    echo "      margin: 0 auto;"
+    echo "      padding: 20px;"
+    echo "      background-color: #fff;"
+    echo "      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);"
+    echo "      border-radius: 10px;"
+    echo "    }"
+    echo "    h1, h2 {"
+    echo "      font-family: 'Poppins', sans-serif;"
+    echo "      margin-bottom: 20px;"
+    echo "    }"
+    echo "    h1 {"
+    echo "      color: #4B286D;"
+    echo "      text-align: center;"
+    echo "      border-bottom: 2px solid #4B286D;"
+    echo "      padding-bottom: 10px;"
+    echo "    }"
+    echo "    h2 {"
+    echo "      color: #6C77A1;"
+    echo "    }"
+    echo "    table {"
+    echo "      width: 100%;"
+    echo "      border-collapse: collapse;"
+    echo "      margin-bottom: 20px;"
+    echo "      border-radius: 8px;"
+    echo "      overflow: hidden;"
+    echo "    }"
+    echo "    th {"
+    echo "      background-color: #4B286D;"
+    echo "      color: #ffffff;"
+    echo "      padding: 10px 15px;"
+    echo "      text-align: left;"
+    echo "      text-transform: uppercase;"
+    echo "    }"
+    echo "    td {"
+    echo "      padding: 10px 15px;"
+    echo "      text-align: left;"
+    echo "      border-bottom: 1px solid #ddd;"
+    echo "      transition: background-color 0.3s;"
+    echo "    }"
+    echo "    tr:nth-child(even) {"
+    echo "      background-color: #f9f9f9;"
+    echo "    }"
+    echo "    tr:hover {"
+    echo "      background-color: #e1e1e1;"
+    echo "    }"
+    echo "    .footer {"
+    echo "      text-align: center;"
+    echo "      padding: 10px;"
+    echo "      color: #4B286D;"
+    echo "      border-top: 1px solid #ddd;"
+    echo "      margin-top: 20px;"
+    echo "    }"
+    echo "    .footer a {"
+    echo "      color: #4B286D;"
+    echo "      text-decoration: none;"
+    echo "      transition: color 0.3s;"
+    echo "    }"
+    echo "    .footer a:hover {"
+    echo "      color: #6C77A1;"
+    echo "    }"
+    echo "  </style>"
     echo "</head>"
     echo "<body>"
+    echo "  <div class='container'>"
+    echo "    <h1>Daily Backup Report ${REPORT_DATE}</h1>"
 } > "${emailFile}"
 
-# Header
-echo "<h1 align=\"center\">Daily Backup Report ${REPORT_DATE}</h1>" >> "${emailFile}"
-
 # GCP Backup Information - MYSQL
-echo "<h1>GCP Backup Information - MYSQL</h1>" >> "${emailFile}"
-mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -H -e "${queryMySQL}" >> "${emailFile}"
+{
+    echo "    <h2>GCP Backup Information - MYSQL</h2>"
+    echo "    <table>"
+    echo "      <tr><th>No</th><th>Server</th><th>Size</th><th>Size Name</th><th>Location</th><th>DB Engine</th><th>OS</th><th>Error</th></tr>"
+    mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -H -e "${queryMySQL}" | sed 's/$/ <\/tr>/; s/<tr>/\<tr\>\<td>/g; s/<\/td>/<\/td><td>/g; s/<td><\/td>//g'
+    echo "    </table>"
+} >> "${emailFile}"
 
 # GCP Backup Information - POSTGRES
-echo "<h1>GCP Backup Information - PGSQL</h1>" >> "${emailFile}"
-mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -H -e "${queryPGSQL}" >> "${emailFile}"
+{
+    echo "    <h2>GCP Backup Information - PGSQL</h2>"
+    echo "    <table>"
+    echo "      <tr><th>No</th><th>Server</th><th>Size</th><th>Size Name</th><th>Location</th><th>DB Engine</th><th>OS</th><th>Error</th></tr>"
+    mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -H -e "${queryPGSQL}" | sed 's/$/ <\/tr>/; s/<tr>/\<tr\>\<td>/g; s/<\/td>/<\/td><td>/g; s/<td><\/td>//g'
+    echo "    </table>"
+} >> "${emailFile}"
 
 # GCP Backup Information - MSSQL
-echo "<h1>GCP Backup Information - MSSQL</h1>" >> "${emailFile}"
-mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -H -e "${queryMSSQL}" >> "${emailFile}"
-
-# Close HTML Tags
-echo "</body></html>" >> "${emailFile}"
+{
+    echo "    <h2>GCP Backup Information - MSSQL</h2>"
+    echo "    <table>"
+    echo "      <tr><th>No</th><th>Server</th><th>Size</th><th>Size Name</th><th>Location</th><th>DB Engine</th><th>OS</th><th>Error</th></tr>"
+    mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -H -e "${queryMSSQL}" | sed 's/$/ <\/tr>/; s/<tr>/\<tr\>\<td>/g; s/<\/td>/<\/td><td>/g; s/<td><\/td>//g'
+    echo "    </table>"
+    echo "    <div class='footer'>"
+    echo "      <p>Report generated by <a href='https://www.telus.com/digital'>Telus Digital</a></p>"
+    echo "    </div>"
+    echo "  </div>"
+    echo "</body>"
+    echo "</html>"
+} >> "${emailFile}"
 
 # Send Email
 /usr/sbin/ssmtp -t < "${emailFile}"
-
