@@ -74,6 +74,9 @@ def load_server_list(file_path):
 
 def get_database_list(host, use_ssl, server):
     """Retrieve the list of databases from the MySQL server."""
+    env = os.environ.copy()
+    env['LIBMYSQL_ENABLE_CLEARTEXT_PLUGIN'] = '1'
+    
     try:
         if not use_ssl:
             command = [
@@ -90,7 +93,7 @@ def get_database_list(host, use_ssl, server):
                 "--default-auth=mysql_native_password",
                 "-B", "--silent", "-e", "SHOW DATABASES"
             ]
-        result = subprocess.check_output(command, stderr=subprocess.STDOUT)
+        result = subprocess.check_output(command, stderr=subprocess.STDOUT, env=env)
         db_list = result.decode("utf-8").strip().split('\n')
         valid_db_list = [
             db for db in db_list if db.isidentifier() and db not in (
@@ -107,12 +110,15 @@ def get_database_list(host, use_ssl, server):
 
 def stream_database_to_gcs(dump_command, gcs_path, db):
     start_time = time.time()
+    env = os.environ.copy()
+    env['LIBMYSQL_ENABLE_CLEARTEXT_PLUGIN'] = '1'
+
     try:
         sanitized_command = sanitize_command(dump_command)
         logging.info("Starting dump process: {}".format(" ".join(sanitized_command)))
 
         # Start the dump process
-        dump_proc = subprocess.Popen(dump_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        dump_proc = subprocess.Popen(dump_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
         logging.info("Starting gzip process")
 
         # Start the gzip process
