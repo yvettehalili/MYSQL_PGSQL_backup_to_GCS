@@ -58,15 +58,16 @@ appendSection() {
                 unit="KB"
             fi
 
-            # Set maximum size for scaling (assuming MSSQL has the largest size for demonstration)
-            maxSize_MB=30720  # Using 30GB as the maximum size for scaling
+            # Set maximum size for scaling (30GB as the maximum size for scaling)
+            maxSize_MB=30720
             percentage=$(echo "${sizeValue}" | awk -v maxSize_MB="${maxSize_MB}" '{print ($1 / maxSize_MB) * 100}')
-            
-            echo "<div style='display: flex; align-items: center; margin-bottom: 20px;'>"
+
+            echo "<div style='display: flex; align-items: center; margin-bottom: 10px;'>"
             echo "  <div style='flex: 1; margin-right: 10px; font-weight: bold; color: #4B286D; width: 150px;'>${Server}</div>"
             echo "  <div style='width: 100%; max-width: 600px; height: 20px; background-color: #ddd; border-radius: 10px; overflow: hidden; border: 1px solid #00C853; position: relative;'>"
-            echo "    <div style='height: 100%; border-radius: 10px; padding: 0 10px; color: white; line-height: 20px; transition: width 0.3s; display: flex; align-items: center; justify-content: flex-end; font-weight: bold; background-color: #4B286D; width: ${percentage}%;'><span style='position: absolute; right: 10px;'>${sizeValue} ${unit}</span></div>"
+            echo "    <div style='height: 100%; border-radius: 10px; padding: 0 10px; line-height: 20px; display: flex; align-items: center; justify-content: flex-end; color: white; background-color: #4B286D; width: ${percentage}%;'></div>"
             echo "  </div>"
+            echo "  <div style='margin-left: 10px; color: #4B286D; font-weight: bold; width: 80px;'>${sizeValue} ${unit}</div>"
             echo "</div>"
         done
     } >> "${emailFile}"
