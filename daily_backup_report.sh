@@ -4,7 +4,7 @@
 DB_USER="trtel.backup"
 DB_PASS="Telus2017#"
 DB_NAME="ti_db_inventory"
-REPORT_DATE=$(date '+%Y-%m-%d') # Automatically set to the current date
+REPORT_DATE=$(date '+%Y-%m-%d')  # Automatically set the report date to the current date
 DIR="backup"
 MAX_SIZE_MB=30720  # 30GB in MB
 
@@ -44,18 +44,20 @@ appendSection() {
 
     {
         echo "<h2 style='color: #00C853; text-align: center;'>${title}</h2>"
-        echo "<div style='display: flex; align-items: flex-end; height: 300px; margin: 20px 0; padding: 10px; background-color: #fff; border: 1px solid #ddd; border-radius: 5px;'>"
+        echo "<div style='display: block; height: 300px; margin: 20px 0; padding: 20px; background-color: #fff; border: 1px solid #ddd; border-radius: 5px;'>"
+        echo "  <div style='display: flex; align-items: flex-end; height: 100%;'>"
         mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -u"${DB_USER}" -p"${DB_PASS}" -D"${DB_NAME}" -e "${query}" --batch --skip-column-names 2>>"${LOG_FILE}" | while IFS=$'\t' read -r Server size_MB; do
             # Set maximum size for scaling (30GB in MB is 30720MB)
             percentage=$(echo "${size_MB}" | awk -v maxSize_MB="${MAX_SIZE_MB}" '{print ($1 / maxSize_MB) * 100}')
             
-            echo "<div style='flex: 1; margin: 0 10px; text-align: center;'>"
-            echo "  <div style='height: ${percentage}%; width: 100%; background-color: ${color}; margin-bottom: 5px; border-radius: 5px 5px 0 0; position: relative;'>"
-            echo "    <span style='position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); color: white; font-size: 12px; margin-bottom: 5px;'>${size_MB} MB</span>"
-            echo "  </div>"
-            echo "  <div style='margin-top: 20px; color: #4B286D; font-size: 14px;'>${Server}</div>"
-            echo "</div>"
+            echo "    <div style='flex: 1; margin: 0 10px; text-align: center;'>"
+            echo "      <div style='height: ${percentage}%; width: 100%; background-color: ${color}; margin-bottom: 5px; border-radius: 5px 5px 0 0; position: relative;'>"
+            echo "        <span style='position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); color: #fff; font-size: 12px;'>${size_MB} MB</span>"
+            echo "      </div>"
+            echo "      <div style='margin-top: 20px; color: #4B286D; font-size: 14px;'>${Server}</div>"
+            echo "    </div>"
         done
+        echo "  </div>"
         echo "</div>"
     } >> "${emailFile}"
 
