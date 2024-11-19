@@ -45,7 +45,7 @@ echo "Mounting bucket for project tine-payroll-prod-01"
 gcsfuse --key-file=/root/jsonfiles/tine-payroll-prod-01.json $BUCKET $STORAGE || { echo "Error mounting gcsfuse for tine-payroll-prod-01"; exit 1; }
 
 echo "============================================================================================================"
-echo "START DATE: $CURRENT_DATE .................................................................................."
+echo "CHECK DATE: $CURRENT_DATE .................................................................................."
 echo "============================================================================================================"
 
 # Fetch and iterate over server details from the database
@@ -53,37 +53,57 @@ mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MAINTENANCE | while IFS
 do
     # Extract the actual TYPE from the TYPE_EXTRA (assume TYPE_EXTRA is the last field)
     TYPE=$(echo "$TYPE_EXTRA" | awk '{print $NF}')
-
+    
     echo "============================================================================================================"
+    echo "SERVER: $SERVER - $SERVERIP - $OS - $TYPE - $SAVE_PATH - $LOCATION"
+    echo "============================================================================================================"
+    echo "Checking backups for SERVER: $SERVER on DATE: $CURRENT_DATE"
 
-    if [[ "$OS" == "Windows" ]]; then
-        DB_FULL_PATH="${SAVE_PATH}/FULL/"
-        DB_DIFF_PATH="${SAVE_PATH}/DIFF/"
-        SIZE=0
-        FILENAMES=()
-        
-        # Aggregate file lists from FULL and DIFF directories
-        FILES=$(gsutil ls "${DB_FULL_PATH}*${TEST_DATE2}*.bak" 2>/dev/null)
-        FILES+=$(gsutil ls "${DB_DIFF_PATH}*${TEST_DATE2}*.bak" 2>/dev/null)
+    BACKUP_PATH="Backups/Current/$SERVER"
+    echo "Backup path being checked: $BACKUP_PATH"
 
-        if [[ -n "$FILES" ]]; then
-            echo "Found backup files: $FILES"
+    SIZE=0
+    FILENAMES=()
 
-            for FILE in $FILES; do
-                fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
-                SIZE=$((SIZE + fsize))
-                FILENAME=$(basename "$FILE")
-                FILENAMES+=("$FILENAME")
+    # Handle MSSQL separately due to different backup structure
+    if [[ "$TYPE" == "MSSQL" ]]; then
+        for DATE in "$CURRENT_DATE" "$TEST_DATE2" "$TEST_DATE3"; do
+            # List all database directories under the server
+            for DB_FOLDER in $(gsutil ls "gs://$BUCKET/$BACKUP_PATH/" | grep '/$'); do
+                DB_FULL_PATH="${DB_FOLDER}FULL/"
+                DB_DIFF_PATH="${DB_FOLDER}DIFF/"
+                echo "Checking FULL directory: ${DB_FULL_PATH}"
+                echo "Checking DIFF directory: ${DB_DIFF_PATH}"
+                
+                # Aggregate file lists from FULL and DIFF directories
+                FILES=$(gsutil ls "${DB_FULL_PATH}*${DATE}*.bak" 2>/dev/null)
+                FILES+=$(gsutil ls "${DB_DIFF_PATH}*${DATE}*.bak" 2>/dev/null)
+                
+                if [[ -n "$FILES" ]]; then
+                    echo "Found backup files: $FILES"
+                    
+                    for FILE in $FILES; do
+                        fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
+                        SIZE=$((SIZE + fsize))
 
-                if [[ "$FILENAME" =~ ^${SERVER}_(.*)_(DIFF|FULL)_(.*)\.bak$ ]]; then
-                    DB_NAME="${BASH_REMATCH[1]}"
+                        # Extract database name and filename from the full file path
+                        FILENAME=$(basename "$FILE")
+                        FILENAMES+=("$FILENAME")
+
+                        if [[ "$FILENAME" =~ ^${SERVER}_(.*)_(DIFF|FULL)_(.*)\.bak$ ]]; then
+                            DB_NAME="${BASH_REMATCH[1]}"
+                        fi
+
+                        echo "Backup details - Server: $SERVER, Database: $DB_NAME, Filename: $FILENAME, Filesize: $fsize, Path: $FILE"
+                    done
+                else
+                    echo "No backup files found for date: $DATE in ${DB_FULL_PATH} and ${DB_DIFF_PATH}"
                 fi
-
-                echo "Backup details - Server: $SERVER, Database: $DB_NAME, Filename: $FILENAME, Filesize: $fsize, Path: $FILE"
             done
-        else
-            echo "No backup files found for date: $CURRENT_DATE in ${DB_FULL_PATH} and ${DB_DIFF_PATH}"
-        fi
+            if [[ -n "$FILES" ]]; then
+                break
+            fi
+        done
     else
         echo "Skipping non-MSSQL server: $SERVER"
     fi
