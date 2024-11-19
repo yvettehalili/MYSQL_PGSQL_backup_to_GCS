@@ -37,8 +37,8 @@ function generateQuery() {
     echo "${queryStr}"
 }
 
-# Function to append section to email content with graphical chart
-appendSection() {
+# Function to append section to email content with vertical bar graph
+appendBarGraphSection() {
     local title="${1}"
     local query="${2}"
 
@@ -46,29 +46,28 @@ appendSection() {
     echo "Query: ${query}" >> "${LOG_FILE}"
 
     {
-        echo "<h2 style='margin-top: 40px; border-bottom: 1px solid #4B286D; padding-bottom: 10px; color: #00C853;'>${title}</h2>"
+        echo "    <h2 style='margin-top: 40px; color: #00C853; text-align: center;'>${title}</h2>"
+        echo "    <div style='display: flex; align-items: flex-end; justify-content: center; height: 400px; border: 1px solid #ddd;'>"
         mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -u"${DB_USER}" -p"${DB_PASS}" -D"${DB_NAME}" -e "${query}" --batch --skip-column-names 2>>"${LOG_FILE}" | while IFS=$'\t' read -r Server size size_name Location DB_engine OS; do
             sizeValue=0
-            unit="B"
             if [[ "${size_name}" == "MB" ]]; then
-                sizeValue="$(echo ${size} | awk '{print $1}')"
-                unit="MB"
+                sizeValue="$(echo ${size} | awk '{print $1*1}')"
             elif [[ "${size_name}" == "KB" ]]; then
                 sizeValue="$(echo ${size} | awk '{print $1/1024}')"
-                unit="KB"
+            else
+                sizeValue="$(echo ${size} | awk '{print $1/(1024*1024)}')"
             fi
 
             # Set maximum size for scaling (assuming MSSQL has the largest size for demonstration)
             maxSize_MB=24837.58
             percentage=$(echo "${sizeValue}" | awk -v maxSize_MB="${maxSize_MB}" '{print ($1 / maxSize_MB) * 100}')
             
-            echo "<div style='display: flex; align-items: center; margin-bottom: 20px;'>"
-            echo "  <div style='flex: 1; margin-right: 10px; font-weight: bold; color: #4B286D;'>${Server}</div>"
-            echo "  <div style='width: 100%; max-width: 600px; height: 30px; background-color: #ddd; border-radius: 10px; overflow: hidden; border: 1px solid #00C853; position: relative;'>"
-            echo "    <div style='height: 100%; border-radius: 10px; padding: 0 10px; color: white; line-height: 30px; transition: width 0.3s; display: flex; align-items: center; justify-content: flex-end; font-weight: bold; background-color: #4B286D; width: ${percentage}%;'><span style='position: absolute; right: 10px;'>${sizeValue} ${unit}</span></div>"
-            echo "  </div>"
-            echo "</div>"
+            echo "    <div style='flex: 1; margin: 0 10px; display: flex; flex-direction: column; align-items: center;'>"
+            echo "      <div style='width: 40px; height: ${percentage}%; background-color: #4B286D; display: flex; align-items: flex-end; justify-content: center; color: white; font-weight: bold;'>${sizeValue} MB</div>"
+            echo "      <div style='writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg); font-size: 14px; color: #4B286D;'>${Server}</div>"
+            echo "    </div>"
         done
+        echo "    </div>"
     } >> "${emailFile}"
 
     if [[ $? -ne 0 ]]; then
@@ -105,7 +104,7 @@ emailFile="${DIR}/yvette_email_notification.html"
     echo "    body { font-family: Arial, sans-serif; background-color: #f4f4f4; color: #333; margin: 0; padding: 20px; }"
     echo "    .container { max-width: 800px; margin: 0 auto; padding: 20px; background-color: #fff; border: 1px solid #ddd; border-radius: 10px; }"
     echo "    h1 { color: #4B286D; text-align: center; }"
-    echo "    h2 { color: #4B286D; }"
+    echo "    h2 { color: #4B286D; margin: 0; }"
     echo "    .footer { text-align: center; padding: 20px; color: #4B286D; border-top: 1px solid #ddd; margin-top: 20px; }"
     echo "  </style>"
     echo "</head>"
@@ -115,9 +114,9 @@ emailFile="${DIR}/yvette_email_notification.html"
 } > "${emailFile}"
 
 # Append sections to the email content
-appendSection "GCP Backup Information - MYSQL" "${queryMySQL}"
-appendSection "GCP Backup Information - PGSQL" "${queryPGSQL}"
-appendSection "GCP Backup Information - MSSQL" "${queryMSSQL}"
+appendBarGraphSection "GCP Backup Information - MySQL" "${queryMySQL}"
+appendBarGraphSection "GCP Backup Information - PostgreSQL" "${queryPGSQL}"
+appendBarGraphSection "GCP Backup Information - MSSQL" "${queryMSSQL}"
 
 # Close HTML Tags
 {
@@ -141,4 +140,3 @@ appendSection "GCP Backup Information - MSSQL" "${queryMSSQL}"
 } | /usr/sbin/sendmail -t
 
 echo "Email sent to yvette.halili@telusinternational.com"
-
