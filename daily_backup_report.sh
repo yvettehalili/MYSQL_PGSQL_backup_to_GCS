@@ -1,4 +1,3 @@
-
 #!/bin/bash
 
 # Maintenance Access
@@ -50,7 +49,7 @@ appendSection() {
 
     {
         echo "    <h2 style='margin-top: 40px; border-bottom: 1px solid #4B286D; padding-bottom: 10px; color: #00C853;'>${title}</h2>"
-        mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -u"${DB_USER}" -p"${DB_PASS}" -e "${query}" --batch --skip-column-names 2>>"${LOG_FILE}" | while IFS=$'\t' read -r No Server size size_name Location DB_engine OS Error; do
+        mysql --defaults-file=/etc/mysql.cnf --defaults-group-suffix=bk -u"${DB_USER}" -p"${DB_PASS}" -e "${query}" --batch --skip-column-names 2>>"${LOG_FILE}" | while IFS=$'\t' read -r No Server size size_name Location DB_engine OS Error; do
             if [[ "${size_name}" == "MB" ]]; then
                 sizeValue="$(echo ${size} | awk '{print $1*1}')"
             elif [[ "${size_name}" == "KB" ]]; then
@@ -94,7 +93,7 @@ echo "${queryPGSQL}" >> "${LOG_FILE}"
 echo "${queryMSSQL}" >> "${LOG_FILE}"
 
 # Email Content
-emailFile="${DIR}/daily_backup_report.html"
+emailFile="${DIR}/yvette_email_notification.html"
 {
     echo "<!DOCTYPE html>"
     echo "<html lang='en'>"
@@ -102,7 +101,6 @@ emailFile="${DIR}/daily_backup_report.html"
     echo "  <meta charset='UTF-8'>"
     echo "  <meta name='viewport' content='width=device-width, initial-scale=1.0'>"
     echo "  <title>Daily Backup Data Overview</title>"
-    echo "  <link rel='stylesheet' href='https://fonts.googleapis.com/css2?family=Poppins:wght@600&display=swap'>"
     echo "  <style>"
     echo "    body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f4f4f4; color: #333; margin: 0; padding: 20px; }"
     echo "    .container { max-width: 1000px; margin: 0 auto; padding: 20px; background-color: #fff; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); border-radius: 15px; border: 1px solid #ddd; }"
@@ -111,7 +109,7 @@ emailFile="${DIR}/daily_backup_report.html"
     echo "    .chart { display: flex; align-items: center; margin-bottom: 20px; }"
     echo "    .label { flex: 1; margin-right: 10px; font-weight: bold; color: #4B286D; }"
     echo "    .bar { width: 100%; max-width: 600px; height: 30px; background-color: #ddd; border-radius: 10px; overflow: hidden; border: 1px solid #00C853; position: relative; }"
-    echo "    .bar .bar-fill { height: 100%; border-radius: 10px; padding: 0 10px; color: white; line-height: 30px; transition: width 0.3s; display: flex; align-items: center; justify-content: flex-end; font-weight: bold; background-color: #4B286D; }"
+    echo "    .bar .bar-fill { height: 100%; border-radius: 10px; padding: 0 10px; color: white; line-height: 30px; transition: width 0.3s; display: flex; align-items: center; justify-content: flex-end; font-weight: bold; background-color: #4B286D; width: 0; }"
     echo "    .bar .bar-fill span { position: absolute; right: 10px; }"
     echo "    .footer { text-align: center; padding: 20px; color: #4B286D; border-top: 1px solid #ddd; margin-top: 40px; }"
     echo "    .footer a { color: #4B286D; text-decoration: none; transition: color 0.3s; }"
@@ -138,20 +136,23 @@ appendSection "GCP Backup Information - MSSQL" "${queryMSSQL}"
     echo "</html>"
 } >> "${emailFile}"
 
+# Escape HTML for email
+escapedEmailContent=$(sed 's/@/=40/g' "${emailFile}" | /usr/bin/tr -d '\n' | /usr/bin/sed -E 's/(.{1,76})([^=]{0,2})?/&=\n/g' | /usr/bin/sed 's/ /=20/g')
+
 # Display Email Content File's Path for Debug
 echo "Email content generated at: ${emailFile}"
 echo "Log file generated at: ${LOG_FILE}"
 
-# Send Email via sendmail
+# Send HTML email via sendmail
 {
     echo "To: yvette.halili@telusinternational.com"
     echo "From: no-reply@telusinternational.com"
     echo "MIME-Version: 1.0"
     echo "Content-Type: text/html; charset=utf-8"
     echo "Content-Transfer-Encoding: quoted-printable"
-    echo "Subject: [Test - susweyak17] Daily Backup Report - ${REPORT_DATE}"
+    echo "Subject: =?UTF-8?Q?[Test=20-=20susweyak17]=20Daily=20Backup=20Report=20-=20${REPORT_DATE}?="
     echo ""
-    cat "${emailFile}"
+    echo "${escapedEmailContent}"
 } | /usr/sbin/sendmail -t
 
 echo "Email sent to yvette.halili@telusinternational.com"
