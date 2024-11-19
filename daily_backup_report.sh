@@ -10,6 +10,10 @@ DIR="backup"
 # Create Directory if not exists
 mkdir -p "${DIR}"
 
+# Debug logs file
+LOG_FILE="${DIR}/debug.log"
+: > "${LOG_FILE}" # Clear log file
+
 # Define the function to generate queries
 function generateQuery {
     local serverType="${1}"
@@ -40,9 +44,13 @@ function generateQuery {
 appendSection() {
     local title="${1}"
     local query="${2}"
+
+    echo "Appending section: ${title}" >> "${LOG_FILE}"
+    echo "Query: ${query}" >> "${LOG_FILE}"
+
     {
         echo "    <h2>${title}</h2>"
-        mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -u"${DB_USER}" -p"${DB_PASS}" -e "${query}" --batch --skip-column-names | while IFS=$'\t' read -r No Server size size_name Location DB_engine OS Error; do
+        mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -u"${DB_USER}" -p"${DB_PASS}" -e "${query}" --batch --skip-column-names 2>>"${LOG_FILE}" | while IFS=$'\t' read -r No Server size size_name Location DB_engine OS Error; do
             if [[ "${size_name}" == "MB" ]]; then
                 sizeValue="$(echo ${size} | awk '{print $1*1}')"
             elif [[ "${size_name}" == "KB" ]]; then
@@ -63,6 +71,12 @@ appendSection() {
             echo "    </div>"
         done
     } >> "${emailFile}"
+
+    if [[ $? -ne 0 ]]; then
+        echo "Query execution failed for section: ${title}" >> "${LOG_FILE}"
+    else
+        echo "Query executed successfully for section: ${title}" >> "${LOG_FILE}"
+    fi
 }
 
 # Clear the terminal screen
@@ -73,6 +87,12 @@ queryMySQL=$(generateQuery "MYSQL" "AND s.location='GCP'")
 queryPGSQL=$(generateQuery "PGSQL" "AND s.location='GCP'")
 queryMSSQL=$(generateQuery "MSSQL" "AND s.location='GCP'")
 
+# Log the generated queries
+echo "Generated Queries:" >> "${LOG_FILE}"
+echo "${queryMySQL}" >> "${LOG_FILE}"
+echo "${queryPGSQL}" >> "${LOG_FILE}"
+echo "${queryMSSQL}" >> "${LOG_FILE}"
+
 # Email Content
 emailFile="${DIR}/yvette_email_notification.html"
 {
@@ -81,7 +101,7 @@ emailFile="${DIR}/yvette_email_notification.html"
     echo "MIME-Version: 1.0"
     echo "Content-Type: text/html; charset=utf-8"
     echo "Subject: [Test - susweyak17] Daily Backup Report - ${REPORT_DATE}"
-
+    echo ""
     echo "<!DOCTYPE html>"
     echo "<html lang='en'>"
     echo "<head>"
@@ -199,6 +219,15 @@ appendSection "GCP Backup Information - MSSQL" "${queryMSSQL}"
 
 # Display Email Content File's Path for Debug
 echo "Email content generated at: ${emailFile}"
+echo "Log file generated at: ${LOG_FILE}"
 
-# Send Email
-/usr/sbin/ssmtp yvette.halili@telusinternational.com < "${emailFile}"
+# Send Email via sendmail
+{
+    echo "To: yvette.halili@telusinternational.com"
+    echo "From: no-reply@telusinternational.com"
+    echo "MIME-Version: 1.0"
+    echo "Content-Type: text/html; charset=utf-8"
+    echo "Subject: [Test - susweyak17] Daily Backup Report - ${REPORT_DATE}"
+    echo ""
+    cat "${emailFile}"
+} | /usr/sbin/sendmail -t
