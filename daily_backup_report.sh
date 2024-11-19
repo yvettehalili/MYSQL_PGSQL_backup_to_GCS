@@ -18,7 +18,7 @@ function generateQuery {
     local serverType="${1}"
     local locationConstraint="${2}"
 
-    local queryStr="SELECT @rownum := @rownum + 1 AS No, b.server AS Server, TRUNCATE(((SUM(b.size) / 1024) / 1024), 2) AS size_MB, s.location AS Location, s.type AS DB_engine, s.os AS OS FROM daily_log b JOIN servers s ON s.name = b.server, (SELECT @rownum := 0) r WHERE b.backup_date = '${REPORT_DATE}' ${locationConstraint} AND s.type='${serverType}' GROUP BY b.server, s.location, s.type, s.os ORDER BY s.type DESC;"
+    local queryStr="SELECT b.server AS Server, TRUNCATE(((SUM(b.size) / 1024) / 1024), 2) AS size_MB, s.location AS Location, s.type AS DB_engine, s.os AS OS FROM daily_log b JOIN servers s ON s.name = b.server WHERE b.backup_date = '${REPORT_DATE}' ${locationConstraint} AND s.type='${serverType}' GROUP BY b.server, s.location, s.type, s.os;"
 
     echo "${queryStr}"
 }
@@ -33,7 +33,7 @@ appendSection() {
 
     {
         echo "<h2 style='margin-top: 20px; color: #4B286D;'>${title}</h2>"
-        mysql --defaults-file=/etc/mysql.cnf --defaults-group-suffix=bk -u"${DB_USER}" -p"${DB_PASS}" -e "${query}" --batch --skip-column-names 2>>"${LOG_FILE}" | while IFS=$'\t' read -r No Server size_MB Location DB_engine OS; do
+        mysql --defaults-file=/etc/mysql.cnf --defaults-group-suffix=bk -u"${DB_USER}" -p"${DB_PASS}" -D "${DB_MAINTENANCE}" -e "${query}" --batch --skip-column-names 2>>"${LOG_FILE}" | while IFS=$'\t' read -r Server size_MB Location DB_engine OS; do
             echo "<div style='margin-bottom: 10px;'>"
             echo "  <strong>Server:</strong> ${Server}<br>"
             echo "  <strong>Size:</strong> ${size_MB} MB<br>"
@@ -42,7 +42,7 @@ appendSection() {
             echo "  <strong>OS:</strong> ${OS}<br>"
             echo "</div>"
         done
-    } >> "${emailFile}"
+    } >> "${emailFile}" 
 
     if [[ $? -ne 0 ]]; then
         echo "Query execution failed for section: ${title}" >> "${LOG_FILE}"
