@@ -160,28 +160,30 @@ appendSection() {
 
     echo "    <h2>${title}</h2>" >> "${emailFile}"
 
-    {
-        echo "    <div class='chart'>"
-        mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -e "${query}" --batch --skip-column-names | while IFS=$'\t' read -r No Server size size_name Location DB_engine OS Error; do
-            if [[ "${size_name}" == "MB" ]]; then
-                sizeValue="$(echo ${size} | awk '{print $1*1}')"
-            elif [[ "${size_name}" == "KB" ]]; then
-                sizeValue="$(echo ${size} | awk '{print $1/1024}')"
-            else
-                sizeValue="$(echo ${size} | awk '{print $1/(1024*1024)}')"
-            fi
+    # Ensure single chart completion
+    echo "    <div class='chart_section'>" >> "${emailFile}"
 
-            # Scale size to percentage for the chart
-            percentage="$(echo "${sizeValue}" | awk '{print ($1/24837.58)*100}')"
-            echo "      <div class='label'>${Server}</div>"
-            echo "      <div class='bar'>"
-            echo "        <div class='bar-fill' style='width: ${percentage}%;'><span>${size} ${size_name}</span></div>"
-            echo "      </div>"
-            echo "    </div>"
-            echo "    <div class='chart'>"
-        done
-        echo "    </div>"
-    } >> "${emailFile}"
+    mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -e "${query}" --batch --skip-column-names | while IFS=$'\t' read -r No Server size size_name Location DB_engine OS Error; do
+        if [[ "${size_name}" == "MB" ]]; then
+            sizeValue="$(echo ${size} | awk '{print $1}')"
+        elif [[ "${size_name}" == "KB" ]]; then
+            sizeValue="$(echo ${size} | awk '{print $1/1024}')"
+        else
+            sizeValue="$(echo ${size} | awk '{print $1/(1024*1024)}')"
+        fi
+
+        # Scale size to percentage for the chart
+        percentage="$(echo ${sizeValue} | awk '{if($1==0) print 0; else print ($1/24837.58)*100}')"
+        echo "      <div class='chart'>" >> "${emailFile}"
+        echo "        <div class='label'>${Server}</div>" >> "${emailFile}"
+        echo "        <div class='bar'>" >> "${emailFile}"
+        echo "          <div class='bar-fill' style='width: ${percentage}%;'><span>${size} ${size_name}</span></div>" >> "${emailFile}"
+        echo "        </div>" >> "${emailFile}"
+        echo "      </div>" >> "${emailFile}"
+    done
+
+    # Close chart section
+    echo "    </div>" >> "${emailFile}"
 }
 
 # GCP Backup Information - MYSQL
@@ -202,6 +204,9 @@ appendSection "GCP Backup Information - MSSQL" "${queryMSSQL}"
     echo "</body>"
     echo "</html>"
 } >> "${emailFile}"
+
+# Display Email Content File's Path for Debug
+echo "Email content generated at: ${emailFile}"
 
 # Send Email
 /usr/sbin/ssmtp -t < "${emailFile}"
