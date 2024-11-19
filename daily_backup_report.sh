@@ -44,28 +44,18 @@ appendSection() {
 
     {
         echo "<h2 style='color: #00C853; text-align: center;'>${title}</h2>"
-        echo "<div style='display: flex; align-items: flex-end; justify-content: center; height: 300px; border: 1px solid #ddd; padding: 10px;'>"
-        echo "  <div style='text-align: right; padding-right: 10px;'>"
-        echo "    <div style='height: 100%; display: flex; flex-direction: column; justify-content: space-between;'>"
-        echo "      <span>30GB</span>"
-        echo "      <span>20GB</span>"
-        echo "      <span>10GB</span>"
-        echo "      <span>0GB</span>"
-        echo "    </div>"
-        echo "  </div>"
-        echo "  <div style='flex-grow: 1; display: flex; align-items: flex-end; justify-content: center;' >"
+        echo "<div style='display: flex; align-items: flex-end; height: 300px; margin: 20px 0; padding: 10px; background-color: #fff; border: 1px solid #ddd; border-radius: 5px;'>"
         mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -u"${DB_USER}" -p"${DB_PASS}" -D"${DB_NAME}" -e "${query}" --batch --skip-column-names 2>>"${LOG_FILE}" | while IFS=$'\t' read -r Server size_MB; do
             # Set maximum size for scaling (30GB in MB is 30720MB)
             percentage=$(echo "${size_MB}" | awk -v maxSize_MB="${MAX_SIZE_MB}" '{print ($1 / maxSize_MB) * 100}')
-            
-            echo "    <div style='flex: 1; margin: 0 10px; text-align: center; width: 50px;'>"
-            echo "      <div style='height: ${percentage}%; width: 100%; background-color: #4B286D; margin-bottom: 10px; position: relative;'>"
-            echo "        <span style='position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); color: #4B286D; font-size: 12px;'>${size_MB} MB</span>"
-            echo "      </div>"
-            echo "      <div style='writing-mode: vertical-rl; text-orientation: mixed; color: #4B286D; font-size: 14px;'>${Server}</div>"
-            echo "    </div>"
+
+            echo "<div style='flex: 1; margin: 0 10px; text-align: center;'>"
+            echo "  <div style='height: ${percentage}%; width: 100%; background-color: #4B286D; margin-bottom: 5px; border-radius: 5px 5px 0 0; position: relative;'>"
+            echo "    <span style='position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); color: #4B286D; font-size: 12px; margin-bottom: 5px;'>${size_MB} MB</span>"
+            echo "  </div>"
+            echo "  <div style='color: #4B286D; font-size: 14px;'>${Server}</div>"
+            echo "</div>"
         done
-        echo "  </div>"
         echo "</div>"
     } >> "${emailFile}"
 
@@ -100,7 +90,7 @@ emailFile="${DIR}/yvette_email_notification.html"
     echo "  <style>"
     echo "    body { font-family: Arial, sans-serif; background-color: #f4f4f4; color: #333; margin: 0; padding: 20px; }"
     echo "    .container { max-width: 800px; margin: 0 auto; padding: 20px; background-color: #fff; border: 1px solid #ddd; border-radius: 10px; }"
-    echo "    h1 { color: #4B286D; text-align: center; }"
+    echo "    h1 { color: #4B286D; text-align: center; margin-bottom: 20px; }"
     echo "    h2 { color: #4B286D; text-align: center; margin-top: 40px; }"
     echo "    .footer { text-align: center; padding: 20px; color: #4B286D; border-top: 1px solid #ddd; margin-top: 20px; }"
     echo "  </style>"
