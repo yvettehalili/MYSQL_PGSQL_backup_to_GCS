@@ -47,7 +47,7 @@ queryMSSQL=$(generateQuery "MSSQL" "AND s.location='GCP'")
 # Email Content
 emailFile="${DIR}/yvette_email_notification.html"
 {
-    echo "To: dba@telusinternational.com"
+    echo "To: yvette.halili@telusinternational.com"
     echo "From: no-reply@telusinternational.com"
     echo "MIME-Version: 1.0"
     echo "Content-Type: text/html; charset=utf-8"
