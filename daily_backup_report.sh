@@ -4,8 +4,9 @@
 DB_USER="trtel.backup"
 DB_PASS="Telus2017#"
 DB_NAME="ti_db_inventory"
-REPORT_DATE=$(date '+%Y-%m-%d') # Automatically set the report date to the current date
+REPORT_DATE=$(date '+%Y-%m-%d')  # Automatically set the report date to the current date
 DIR="backup"
+MAX_SIZE_MB=30720  # 30GB in MB
 
 # Create Directory if not exists
 mkdir -p "${DIR}"
@@ -43,18 +44,28 @@ appendSection() {
 
     {
         echo "<h2 style='color: #00C853; text-align: center;'>${title}</h2>"
-        echo "<div class='chart-container' style='display: flex; justify-content: center; align-items: flex-end; height: 300px; border: 1px solid #ddd; padding: 10px;'>"
+        echo "<div style='display: flex; align-items: flex-end; justify-content: center; height: 300px; border: 1px solid #ddd; padding: 10px;'>"
+        echo "  <div style='text-align: right; padding-right: 10px;'>"
+        echo "    <div style='height: 100%; display: flex; flex-direction: column; justify-content: space-between;'>"
+        echo "      <span>30GB</span>"
+        echo "      <span>20GB</span>"
+        echo "      <span>10GB</span>"
+        echo "      <span>0GB</span>"
+        echo "    </div>"
+        echo "  </div>"
+        echo "  <div style='flex-grow: 1; display: flex; align-items: flex-end; justify-content: center;' >"
         mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -u"${DB_USER}" -p"${DB_PASS}" -D"${DB_NAME}" -e "${query}" --batch --skip-column-names 2>>"${LOG_FILE}" | while IFS=$'\t' read -r Server size_MB; do
             # Set maximum size for scaling (30GB in MB is 30720MB)
-            maxSize_MB=30720
-            percentage=$(echo "${size_MB}" | awk -v maxSize_MB="${maxSize_MB}" '{print ($1 / maxSize_MB) * 100}')
+            percentage=$(echo "${size_MB}" | awk -v maxSize_MB="${MAX_SIZE_MB}" '{print ($1 / maxSize_MB) * 100}')
             
-            echo "<div style='margin: 0 10px; text-align: center;'>"
-            echo "  <div style='height: ${percentage}%; width: 30px; background-color: #4B286D; margin-bottom: 10px;'></div>"
-            echo "  <div style='writing-mode: vertical-rl; text-orientation: mixed; color: #4B286D;'>${Server}</div>"
-            echo "  <div style='color: #4B286D;'>${size_MB} MB</div>"
-            echo "</div>"
+            echo "    <div style='flex: 1; margin: 0 10px; text-align: center; width: 50px;'>"
+            echo "      <div style='height: ${percentage}%; width: 100%; background-color: #4B286D; margin-bottom: 10px; position: relative;'>"
+            echo "        <span style='position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); color: #4B286D; font-size: 12px;'>${size_MB} MB</span>"
+            echo "      </div>"
+            echo "      <div style='writing-mode: vertical-rl; text-orientation: mixed; color: #4B286D; font-size: 14px;'>${Server}</div>"
+            echo "    </div>"
         done
+        echo "  </div>"
         echo "</div>"
     } >> "${emailFile}"
 
@@ -126,4 +137,3 @@ appendSection "GCP Backup Information - MSSQL" "${queryMSSQL}"
 } | /usr/sbin/sendmail -t
 
 echo "Email sent to yvette.halili@telusinternational.com"
-
