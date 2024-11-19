@@ -4,18 +4,18 @@
 DB_USER="trtel.backup"
 DB_PASS="Telus2017#"
 DB_NAME="ti_db_inventory"
-REPORT_DATE=$(date '+%Y-%m-%d')  # Automatically set the report date to the current date
+REPORT_DATE=$(date '+%Y-%m-%d') # Automatically set to the current date
 DIR="backup"
 MAX_SIZE_MB=30720  # 30GB in MB
 
-# Create Directory if not exists
+# Create directory if it does not exist
 mkdir -p "${DIR}"
 
 # Debug logs file
 LOG_FILE="${DIR}/debug.log"
 : > "${LOG_FILE}" # Clear log file
 
-# Define the function to generate queries
+# Define function to generate queries
 function generateQuery() {
     local serverType="${1}"
     local locationConstraint="${2}"
@@ -30,7 +30,6 @@ function generateQuery() {
     queryStr+="JOIN servers s ON s.name = b.server "
     queryStr+="WHERE b.backup_date = '${REPORT_DATE}' ${locationConstraint} AND s.type='${serverType}' "
     queryStr+="GROUP BY b.server;"
-
     echo "${queryStr}"
 }
 
@@ -38,6 +37,7 @@ function generateQuery() {
 appendSection() {
     local title="${1}"
     local query="${2}"
+    local color="${3}"
 
     echo "Appending section: ${title}" >> "${LOG_FILE}"
     echo "Query: ${query}" >> "${LOG_FILE}"
@@ -48,12 +48,12 @@ appendSection() {
         mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -u"${DB_USER}" -p"${DB_PASS}" -D"${DB_NAME}" -e "${query}" --batch --skip-column-names 2>>"${LOG_FILE}" | while IFS=$'\t' read -r Server size_MB; do
             # Set maximum size for scaling (30GB in MB is 30720MB)
             percentage=$(echo "${size_MB}" | awk -v maxSize_MB="${MAX_SIZE_MB}" '{print ($1 / maxSize_MB) * 100}')
-
+            
             echo "<div style='flex: 1; margin: 0 10px; text-align: center;'>"
-            echo "  <div style='height: ${percentage}%; width: 100%; background-color: #4B286D; margin-bottom: 5px; border-radius: 5px 5px 0 0; position: relative;'>"
-            echo "    <span style='position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); color: #4B286D; font-size: 12px; margin-bottom: 5px;'>${size_MB} MB</span>"
+            echo "  <div style='height: ${percentage}%; width: 100%; background-color: ${color}; margin-bottom: 5px; border-radius: 5px 5px 0 0; position: relative;'>"
+            echo "    <span style='position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); color: white; font-size: 12px; margin-bottom: 5px;'>${size_MB} MB</span>"
             echo "  </div>"
-            echo "  <div style='margin-top: 10px; color: #4B286D; font-size: 14px;'>${Server}</div>"
+            echo "  <div style='margin-top: 20px; color: #4B286D; font-size: 14px;'>${Server}</div>"
             echo "</div>"
         done
         echo "</div>"
@@ -101,9 +101,9 @@ emailFile="${DIR}/yvette_email_notification.html"
 } > "${emailFile}"
 
 # Append sections to the email content
-appendSection "GCP Backup Information - MySQL" "${queryMySQL}"
-appendSection "GCP Backup Information - PostgreSQL" "${queryPGSQL}"
-appendSection "GCP Backup Information - MSSQL" "${queryMSSQL}"
+appendSection "GCP Backup Information - MySQL" "${queryMySQL}" "#4B286D"
+appendSection "GCP Backup Information - PostgreSQL" "${queryPGSQL}" "#4B286D"
+appendSection "GCP Backup Information - MSSQL" "${queryMSSQL}" "#4B286D"
 
 # Close HTML Tags
 {
