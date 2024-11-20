@@ -20,6 +20,7 @@ KEY_FILE="/root/jsonfiles/ti-dba-prod-01.json"
 TEST_DATE=$(date +"%Y-%m-%d")
 TEST_DATE2=$(date -d "$TEST_DATE" +"%Y%m%d")
 TEST_DATE3=$(date -d "$TEST_DATE" +"%d-%m-%Y")
+CURRENT_DAY=$(date +"%A")
 
 # SQL Query to Fetch Server Details
 query="SELECT name, ip, user, pwd, os, frequency, save_path, location, type 
@@ -55,10 +56,16 @@ echo "START DATE: $TEST_DATE ...................................................
 echo "============================================================================================================"
 
 # Fetch and iterate over server details from the database
-mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MNT | while IFS=$'\t' read_fields SERVER SERVERIP WUSER WUSERP OS SAVE_PATH LOCATION TYPE
+mysql -u"$DB_USER" -p"$DB_PASS" --batch -se "$query" $DB_MNT | while IFS=$'\t' read_fields SERVER SERVERIP WUSER WUSERP OS FREQUENCY SAVE_PATH LOCATION TYPE
 do
+    # Skip servers with frequency as Sunday if today is not Sunday
+    if [ "$FREQUENCY" == "Sunday" ] && [ "$CURRENT_DAY" != "Sunday" ]; then
+        echo "Skipping SERVER: $SERVER as its backup frequency is Sunday and today is not Sunday."
+        continue
+    fi
+
     echo "============================================================================================================"
-    echo "SERVER: $SERVER - $SERVERIP - $OS - $TYPE - $SAVE_PATH - $LOCATION"
+    echo "SERVER: $SERVER - $SERVERIP - $OS - $TYPE - $FREQUENCY - $SAVE_PATH - $LOCATION"
     echo "============================================================================================================"
     echo "Checking backups for SERVER: $SERVER on DATE: $TEST_DATE"
 
