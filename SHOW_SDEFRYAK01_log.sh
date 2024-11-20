@@ -51,25 +51,28 @@ STATE="Completed"
 # List all database directories under the server
 echo "Listing all subdirectories (databases) under gs://$BUCKET/$SERVER_BACKUP_PATH"
 DB_FOLDERS=$(gsutil ls "gs://$BUCKET/$SERVER_BACKUP_PATH" 2>&1)
+echo "gsutil ls output: $DB_FOLDERS"
 
 if echo "$DB_FOLDERS" | grep -q 'CommandException'; then
     echo "$DB_FOLDERS"
     echo "No database folders found under gs://$BUCKET/$SERVER_BACKUP_PATH"
 else
     DB_FOLDERS=$(echo "$DB_FOLDERS" | grep '/$')
+    echo "Database folders found: $DB_FOLDERS"
 
     if [[ -z "$DB_FOLDERS" ]]; then
         echo "No database folders found under gs://$BUCKET/$SERVER_BACKUP_PATH"
     else
         for DB_FOLDER in $DB_FOLDERS; do
             DB_NAME=$(basename "$DB_FOLDER")
-            DB_FULL_PATH="gs://${BUCKET}/${SERVER_BACKUP_PATH}${DB_NAME}/FULL"
+            DB_FULL_PATH="gs://${BUCKET}/${SERVER_BACKUP_PATH}${DB_NAME}/FULL/"
 
             for DATE in "$TEST_DATE" "$TEST_DATE2" "$TEST_DATE3"; do
                 echo "Checking FULL directory: ${DB_FULL_PATH}"
 
                 # Aggregate file lists from FULL directory
                 FULL_FILES=$(gsutil ls "${DB_FULL_PATH}/*${DATE}*.bak" 2>/dev/null)
+                echo "FULL_FILES output: $FULL_FILES"
 
                 if [[ -n "$FULL_FILES" ]]; then
                     echo "Found backup files: $FULL_FILES"
