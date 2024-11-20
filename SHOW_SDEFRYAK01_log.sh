@@ -16,7 +16,7 @@ TEST_DATE2=$(date -d "$TEST_DATE" +"%Y%m%d")
 TEST_DATE3=$(date -d "$TEST_DATE" +"%d-%m-%Y")
 
 # Specific Server Details
-SERVER="SDEFRYAK01"
+SERVER="sdefryak01"
 SERVERIP="10.87.9.13"
 OS="WINDOWS"
 TYPE="GCP MSSQL"
@@ -51,14 +51,12 @@ STATE="Completed"
 # List all database directories under the server
 echo "Listing all subdirectories (databases) under gs://$BUCKET/$SERVER_BACKUP_PATH"
 DB_FOLDERS=$(gsutil ls "gs://$BUCKET/$SERVER_BACKUP_PATH" 2>&1)
-echo "gsutil ls output: $DB_FOLDERS"
 
 if echo "$DB_FOLDERS" | grep -q 'CommandException'; then
     echo "$DB_FOLDERS"
     echo "No database folders found under gs://$BUCKET/$SERVER_BACKUP_PATH"
 else
     DB_FOLDERS=$(echo "$DB_FOLDERS" | grep '/$')
-    echo "Database folders found: $DB_FOLDERS"
 
     if [[ -z "$DB_FOLDERS" ]]; then
         echo "No database folders found under gs://$BUCKET/$SERVER_BACKUP_PATH"
