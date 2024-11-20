@@ -24,40 +24,66 @@ function generateQuery() {
     queryStr+="(CASE WHEN (TRUNCATE(((SUM(b.size) / 1024) / 1024), 0) > 0) THEN "
     queryStr+="TRUNCATE(((SUM(b.size) / 1024) / 1024), 2) "
     queryStr+="ELSE TRUNCATE((SUM(b.size) / 1024), 2) END) "
-    queryStr+="ELSE SUM(b.size) END) AS size_MB "
+    queryStr+="ELSE SUM(b.size) END) AS size, "
+    queryStr+="(CASE WHEN (TRUNCATE((SUM(b.size) / 1024), 0) > 0) THEN "
+    queryStr+="(CASE WHEN (TRUNCATE(((SUM(b.size) / 1024) / 1024), 0) > 0) "
+    queryStr+="THEN 'MB' ELSE 'KB' END) ELSE 'B' END) AS size_name, "
+    queryStr+="s.location AS Location, s.type AS DB_engine, s.os AS OS "
     queryStr+="FROM daily_log b "
     queryStr+="JOIN servers s ON s.name = b.server "
     queryStr+="WHERE b.backup_date = '${REPORT_DATE}' ${locationConstraint} AND s.type='${serverType}' "
-    queryStr+="GROUP BY b.server;"
+    queryStr+="GROUP BY b.server, s.location, s.type, s.os;"
 
     echo "${queryStr}"
 }
 
-# Function to append section to email content with vertical bar graph
-appendSection() {
+# Function to append section to email content with table
+appendSectionWithTable() {
     local title="${1}"
     local query="${2}"
-    local color="${3}"
 
     echo "Appending section: ${title}" >> "${LOG_FILE}"
     echo "Query: ${query}" >> "${LOG_FILE}"
 
     {
         echo "<h2 style='color: #4B286D; text-align: center;'>${title}</h2>"
-        echo "<table style='width: 100%; border-collapse: collapse;'>"
-        echo "  <tr style='height: 300px; vertical-align: bottom;'>"
-        mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -u"${DB_USER}" -p"${DB_PASS}" -D"${DB_NAME}" -e "${query}" --batch --skip-column-names 2>>"${LOG_FILE}" | while IFS=$'\t' read -r Server size_MB; do
-            # Set maximum size for scaling (30GB in MB is 30720MB)
-            percentage=$(echo "${size_MB}" | awk -v maxSize_MB=30720 '{print ($1 / maxSize_MB) * 100}')
+        echo "<table style='width: 100%; border-collapse: collapse; margin: 20px 0; border: 1px solid #ddd;'>"
+        echo "  <thead>"
+        echo "    <tr style='background-color: #4B286D; color: white;'>"
+        echo "      <th style='padding: 10px; text-align: left;'>No</th>"
+        echo "      <th style='padding: 10px; text-align: left;'>Server</th>"
+        echo "      <th style='padding: 10px; text-align: left;'>Size</th>"
+        echo "      <th style='padding: 10px; text-align: left;'>Size Name</th>"
+        echo "      <th style='padding: 10px; text-align: left;'>Location</th>"
+        echo "      <th style='padding: 10px; text-align: left;'>DB Engine</th>"
+        echo "      <th style='padding: 10px; text-align: left;'>OS</th>"
+        echo "      <th style='padding: 10px; text-align: left;'>Error</th>"
+        echo "    </tr>"
+        echo "  </thead>"
+        echo "  <tbody>"
 
-            echo "    <td style='text-align: center; padding: 0 10px;'>"
-            echo "      <div style='height: ${percentage}%; width: 100%; min-height: 2px; background-color: ${color}; margin-bottom: 5px; position: relative;'>"
-            echo "        <span style='position: absolute; top: -20px; left: 50%; transform: translateX(-50%); color: white; font-size: 12px;'>${size_MB} MB</span>"
-            echo "      </div>"
-            echo "      <div style='margin-top: 20px; color: #4B286D; font-size: 14px;'>${Server}</div>"
-            echo "    </td>"
+        local counter=1
+        mysql --defaults-file=/etc/mysql/my.cnf --defaults-group-suffix=bk -u"${DB_USER}" -p"${DB_PASS}" -D"${DB_NAME}" -e "${query}" --batch --skip-column-names 2>>"${LOG_FILE}" | while IFS=$'\t' read -r Server size size_name Location DB_engine OS; do
+            # Determine error status based on the size
+            local error="No"
+            if [[ "$size" == "0.00" && "$size_name" == "B" ]]; then
+                error="Yes"
+            fi
+
+            echo "    <tr style='border-bottom: 1px solid #ddd;'>"
+            echo "      <td style='padding: 8px;'>${counter}</td>"
+            echo "      <td style='padding: 8px;'>${Server}</td>"
+            echo "      <td style='padding: 8px;'>${size}</td>"
+            echo "      <td style='padding: 8px;'>${size_name}</td>"
+            echo "      <td style='padding: 8px;'>${Location}</td>"
+            echo "      <td style='padding: 8px;'>${DB_engine}</td>"
+            echo "      <td style='padding: 8px;'>${OS}</td>"
+            echo "      <td style='padding: 8px;'>${error}</td>"
+            echo "    </tr>"
+            ((counter++))
         done
-        echo "  </tr>"
+
+        echo "  </tbody>"
         echo "</table>"
     } >> "${emailFile}"
 
@@ -90,9 +116,15 @@ emailFile="${DIR}/yvette_email_notification.html"
     echo "<head>"
     echo "  <meta charset='UTF-8'>"
     echo "  <style>"
-    echo "    body { font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 20px; }"
+    echo "    body { font-family: Arial, sans-serif; background-color: #f4f4f4; color: #333; margin: 0; padding: 20px; }"
     echo "    .container { max-width: 800px; margin: 0 auto; padding: 20px; background-color: #fff; border: 1px solid #ddd; border-radius: 10px; }"
     echo "    h1 { color: #4B286D; text-align: center; margin-bottom: 20px; }"
+    echo "    h2 { color: #4B286D; text-align: center; margin-top: 40px; }"
+    echo "    table { width: 100%; border-collapse: collapse; margin: 20px 0; border: 1px solid #ddd; }"
+    echo "    th, td { padding: 10px; text-align: left; }"
+    echo "    th { background-color: #4B286D; color: white; }"
+    echo "    tr:nth-child(even) { background-color: #f9f9f9; }"
+    echo "    tr:hover { background-color: #f1f1f1; }"
     echo "    .footer { text-align: center; padding: 20px; color: #4B286D; border-top: 1px solid #ddd; }"
     echo "  </style>"
     echo "</head>"
@@ -102,9 +134,9 @@ emailFile="${DIR}/yvette_email_notification.html"
 } > "${emailFile}"
 
 # Append sections to the email content
-appendSection "GCP Backup Information - MySQL" "${queryMySQL}" "#4B286D"
-appendSection "GCP Backup Information - PostgreSQL" "${queryPGSQL}" "#4B286D"
-appendSection "GCP Backup Information - MSSQL" "${queryMSSQL}" "#4B286D"
+appendSectionWithTable "GCP Backup Information - MySQL" "${queryMySQL}"
+appendSectionWithTable "GCP Backup Information - PostgreSQL" "${queryPGSQL}"
+appendSectionWithTable "GCP Backup Information - MSSQL" "${queryMSSQL}"
 
 # Close HTML Tags
 {
@@ -128,4 +160,3 @@ appendSection "GCP Backup Information - MSSQL" "${queryMSSQL}" "#4B286D"
 } | /usr/sbin/sendmail -t
 
 echo "Email sent to yvette.halili@telusinternational.com"
-
