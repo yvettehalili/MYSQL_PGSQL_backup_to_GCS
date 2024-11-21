@@ -41,27 +41,21 @@ for line in "${lines[@]}"; do
 
     if [ "$SSL" != "y" ]; then
         DB_LIST=$(mysql -u"$DB_USR" -p"$DB_PWD" --default-auth=mysql_native_password -h "$DB_HOST" -Bs -e "SHOW DATABASES")
-        if [ $? -ne 0 ]; then
-            printf "Error retrieving database list for server: ${SERVER}\n" >&2
-            continue
-        fi
+        [ $? -ne 0 ] && { printf "Error retrieving database list for server: ${SERVER}\n" >&2; continue; }
     else
         DB_LIST=$(mysql -u"$DB_USR" -p"$DB_PWD" --default-auth=mysql_native_password -h "$DB_HOST" \
                    --ssl-ca="${SSL_PATH}${SERVER}/server-ca.pem" \
                    --ssl-cert="${SSL_PATH}${SERVER}/client-cert.pem" \
                    --ssl-key="${SSL_PATH}${SERVER}/client-key.pem" -Bs -e "SHOW DATABASES")
-        if [ $? -ne 0 ]; then
-            printf "Error retrieving database list for server: ${SERVER}\n" >&2
-            continue
-        fi
+        [ $? -ne 0 ] && { printf "Error retrieving database list for server: ${SERVER}\n" >&2; continue; }
     fi
 
     cd "${TMP_PATH}"
-    [ ! -d "${SERVER}" ] && mkdir -p "$SERVER"
-    cd "$SERVER"
+    [ ! -d "${SERVER}" ] && mkdir -p "${SERVER}"
+    cd "${SERVER}"
 
     for DB in $DB_LIST; do
-        if [[ "$DB" != "information_schema" ]] && [[ "$DB" != "performance_schema" ]] && [[ "$DB" != "sys" ]] && [[ "$DB" != "mysql" ]]; then
+        if [[ "$DB" != "information_schema" && "$DB" != "performance_schema" && "$DB" != "sys" && "$DB" != "mysql" ]]; then
             printf "Dumping DB $DB\n"
             if [ "$SSL" != "y" ]; then
                 mysqldump -u"$DB_USR" -p"$DB_PWD" --default-auth=mysql_native_password --set-gtid-purged=OFF --single-transaction --lock-tables=false --quick \
@@ -110,9 +104,10 @@ for line in "${lines[@]}"; do
             fi
         fi
     done
-    gsutil -m -o GSUtil:parallel_composite_upload_threshold=150MB mv *.gz gs://"${BUCKET}/Backups/Current/${SERVER}/"
+    gsutil -m -o "GSUtil:parallel_composite_upload_threshold=150MB" mv *.gz gs://"${BUCKET}/Backups/Current/${SERVER}/"
 done
 
 printf "============================================================================================\n\n"
 cd ~
+
 exit
