@@ -12,7 +12,7 @@ SERVER = '34.78.106.8,1433'
 USERNAME = 'genbackupuser'
 PASSWORD = 'genbackupuser'
 INSTANCE_NAME = 'ti-aiprod-ms-primary-01'  # Change this as per your instance name
-GCS_BUCKET_NAME = "your-bucket-name"  # Change to your GCS bucket name
+GCS_BUCKET_NAME = "ti-dba-prod-sql-01"  # GCS bucket name
 
 # Setup logging
 current_date = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -62,9 +62,9 @@ def backup_database(connection, database_name):
     duration = (end_time - start_time).total_seconds()
     log_info(f"Backup Completed for database {database_name} to {backup_file_local} successfully in {duration:.2f} seconds.")
 
-    # Upload to GCS
-    backup_file_gcs = f"{INSTANCE_NAME}/{database_name}/{os.path.basename(backup_file_local)}"
-    upload_to_gcs(backup_file_local, GCS_BUCKET_NAME, backup_file_gcs)
+    # Construct GCS path
+    gcs_path = f"Backups/Current/MSSQL/{INSTANCE_NAME}/{database_name}/FULL/{os.path.basename(backup_file_local)}"
+    upload_to_gcs(backup_file_local, GCS_BUCKET_NAME, gcs_path)
 
 def main():
     log_info("================================== {} ============================================".format(current_date))
