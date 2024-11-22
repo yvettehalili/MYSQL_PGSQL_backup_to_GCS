@@ -2,6 +2,7 @@ import pyodbc
 import os
 import datetime
 import logging
+from google.cloud import storage
 
 # Configuration
 CONFIG_FILE = "/backup/configs/MSSQL_database_list.conf"
@@ -11,6 +12,7 @@ SERVER = '34.78.106.8,1433'
 USERNAME = 'genbackupuser'
 PASSWORD = 'genbackupuser'
 INSTANCE_NAME = 'ti-aiprod-ms-primary-01'  # Change this as per your instance name
+GCS_BUCKET_NAME = "your-bucket-name"  # Change to your GCS bucket name
 
 # Setup logging
 current_date = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -31,10 +33,17 @@ def read_database_list(config_file):
                 databases.append(db)
     return databases
 
+def upload_to_gcs(local_file_path, bucket_name, destination_blob_name):
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(bucket_name)
+    blob = bucket.blob(destination_blob_name)
+    blob.upload_from_filename(local_file_path)
+    log_info(f"Uploaded {local_file_path} to gs://{bucket_name}/{destination_blob_name}")
+
 def backup_database(connection, database_name):
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_file = os.path.join(BACKUP_DIR, f"{INSTANCE_NAME}_{database_name}_FULL_{timestamp}.bak")
-    backup_command = f"BACKUP DATABASE [{database_name}] TO DISK = N'{backup_file}' WITH NOFORMAT, NOINIT, NAME = N'{database_name}-Full Database Backup', SKIP, NOREWIND, NOUNLOAD, STATS = 10"
+    backup_file_local = os.path.join(BACKUP_DIR, f"{INSTANCE_NAME}_{database_name}_FULL_{timestamp}.bak")
+    backup_command = f"BACKUP DATABASE [{database_name}] TO DISK = N'{backup_file_local}' WITH NOFORMAT, NOINIT, NAME = N'{database_name}-Full Database Backup', SKIP, NOREWIND, NOUNLOAD, STATS = 10"
 
     log_info(f"Backing up database: {database_name}")
     log_info(f"Backup command: {backup_command.replace(PASSWORD, '****')}")
@@ -51,7 +60,11 @@ def backup_database(connection, database_name):
     end_time = datetime.datetime.now()
 
     duration = (end_time - start_time).total_seconds()
-    log_info(f"Backup Completed for database {database_name} to {backup_file} successfully in {duration:.2f} seconds.")
+    log_info(f"Backup Completed for database {database_name} to {backup_file_local} successfully in {duration:.2f} seconds.")
+
+    # Upload to GCS
+    backup_file_gcs = f"{INSTANCE_NAME}/{database_name}/{os.path.basename(backup_file_local)}"
+    upload_to_gcs(backup_file_local, GCS_BUCKET_NAME, backup_file_gcs)
 
 def main():
     log_info("================================== {} ============================================".format(current_date))
