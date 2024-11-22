@@ -11,7 +11,7 @@ LOG_DIR = "/backup/logs"
 SERVER = '34.78.106.8,1433'  # Replace with your SQL Server instance IP
 USERNAME = 'genbackupuser'
 PASSWORD = 'genbackupuser'
-INSTANCE_NAME = 'ti-aiprod-ms-primary-01'  # Change this as per your instance name
+INSTANCE_NAME = 'ti-aiprod-ms-primary-01'  # Change as per your instance name
 GCS_BUCKET_NAME = "ti-dba-prod-sql-01"  # Replace with your GCS bucket name
 
 # Setup logging
@@ -83,7 +83,6 @@ def main():
 
     connection.close()
     log_info("==== Backup Process Completed ====")
-
 
 if __name__ == "__main__":
     main()
