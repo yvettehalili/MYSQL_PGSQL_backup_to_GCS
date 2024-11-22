@@ -40,9 +40,14 @@ def backup_database(connection, database_name):
     log_info(f"Backup command: {backup_command.replace(PASSWORD, '****')}")
 
     start_time = datetime.datetime.now()
+
+    # Use autocommit for the backup command
+    connection.autocommit = True
     cursor = connection.cursor()
     cursor.execute(backup_command)
     cursor.commit()
+    connection.autocommit = False
+
     end_time = datetime.datetime.now()
 
     duration = (end_time - start_time).total_seconds()
