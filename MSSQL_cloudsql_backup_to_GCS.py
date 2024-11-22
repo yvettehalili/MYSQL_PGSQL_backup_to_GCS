@@ -1,3 +1,4 @@
+# mssql_backup_gcs_with_temp.py
 import pyodbc
 import os
 import datetime
@@ -6,13 +7,13 @@ from google.cloud import storage
 
 # Configuration
 CONFIG_FILE = "/backup/configs/MSSQL_database_list.conf"
-BACKUP_DIR = "/backup/dumps"
+TEMP_BACKUP_DIR = "/tmp/backups"
 LOG_DIR = "/backup/logs"
+GCS_BUCKET_NAME = "ti-dba-prod-sql-01"  # Replace with your GCS bucket name
 SERVER = '34.78.106.8,1433'  # Replace with your SQL Server instance IP
 USERNAME = 'genbackupuser'
 PASSWORD = 'genbackupuser'
-INSTANCE_NAME = 'ti-aiprod-ms-primary-01'  # Change as per your instance name
-GCS_BUCKET_NAME = "ti-dba-prod-sql-01"  # Replace with your GCS bucket name
+INSTANCE_NAME = 'ti-aiprod-ms-primary-01'  # Change this as per your instance name
 
 # Setup logging
 current_date = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -42,8 +43,8 @@ def upload_to_gcs(local_file_path, bucket_name, destination_blob_name):
 
 def backup_database(connection, database_name):
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_file_local = os.path.join(BACKUP_DIR, f"{INSTANCE_NAME}_{database_name}_FULL_{timestamp}.bak")
-    backup_command = f"BACKUP DATABASE [{database_name}] TO DISK = N'{backup_file_local}' WITH NOFORMAT, NOINIT, NAME = N'{database_name}-Full Database Backup', SKIP, NOREWIND, NOUNLOAD, STATS = 10"
+    backup_file_temp = os.path.join(TEMP_BACKUP_DIR, f"{INSTANCE_NAME}_{database_name}_FULL_{timestamp}.bak")
+    backup_command = f"BACKUP DATABASE [{database_name}] TO DISK = N'{backup_file_temp}' WITH NOFORMAT, NOINIT, NAME = N'{database_name}-Full Database Backup', SKIP, NOREWIND, NOUNLOAD, STATS = 10"
 
     log_info(f"Backing up database: {database_name}")
     log_info(f"Backup command: {backup_command.replace(PASSWORD, '****')}")
@@ -60,11 +61,15 @@ def backup_database(connection, database_name):
     end_time = datetime.datetime.now()
 
     duration = (end_time - start_time).total_seconds()
-    log_info(f"Backup Completed for database {database_name} to {backup_file_local} successfully in {duration:.2f} seconds.")
+    log_info(f"Backup Completed for database '{database_name}' to '{backup_file_temp}' successfully in {duration:.2f} seconds.")
 
     # Construct GCS path
-    gcs_path = f"Backups/Current/MSSQL/{INSTANCE_NAME}/{database_name}/FULL/{os.path.basename(backup_file_local)}"
-    upload_to_gcs(backup_file_local, GCS_BUCKET_NAME, gcs_path)
+    gcs_path = f"Backups/Current/MSSQL/{INSTANCE_NAME}/{database_name}/FULL/{os.path.basename(backup_file_temp)}"
+    upload_to_gcs(backup_file_temp, GCS_BUCKET_NAME, gcs_path)
+
+    # Remove temp backup file to save space
+    os.remove(backup_file_temp)
+    log_info(f"Removed local backup file: {backup_file_temp}")
 
 def main():
     log_info("================================== {} ============================================".format(current_date))
@@ -79,7 +84,7 @@ def main():
         try:
             backup_database(connection, database)
         except Exception as e:
-            log_info(f"Error while backing up database {database}: {str(e)}")
+            log_info(f"Error while backing up database '{database}': {str(e)}")
 
     connection.close()
     log_info("==== Backup Process Completed ====")
