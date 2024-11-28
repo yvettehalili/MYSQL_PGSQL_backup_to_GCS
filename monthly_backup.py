@@ -1,8 +1,6 @@
 import os
-import smtplib
 import datetime
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+import subprocess
 import mysql.connector
 
 # Database Credentials
@@ -37,11 +35,6 @@ cursor = db_conn.cursor()
 cursor.execute(DAILY_BACKUP_LOGS_QUERY)
 data = cursor.fetchall()
 
-# Write data to file
-with open(DAILY_BACKUP_LOGS_FILE, 'w') as file:
-    for row in data:
-        file.write('\t'.join(map(str, row)) + '\n')
-
 # Initialize data aggregation variables
 storage_utilization = {}
 successful_count = 0
@@ -62,10 +55,6 @@ for row in data:
         # Sum storage per month
         storage_utilization[MONTH] = storage_utilization.get(MONTH, 0) + SIZE
 
-        # Debug print statements
-        if len(str(storage_utilization[MONTH])) < 20:  # Avoid huge outputs for debug
-            print(f"Debug: DATE={DATE}, SERVER={SERVER}, SIZE={SIZE}, MONTH={MONTH}, STORAGE_VAL={storage_utilization[MONTH]}")
-
         # Backup status overview
         if SIZE == 0:
             failed_count += 1
@@ -81,8 +70,6 @@ for MONTH in MONTHS:
     STORAGE_BYTES = storage_utilization.get(MONTH, 0)
     # Convert bytes to GB
     STORAGE_GB = round(STORAGE_BYTES / 1073741824, 2)
-    # Debug print statements
-    print(f"Debug: MONTH={MONTH}, STORAGE_BYTES={STORAGE_BYTES}, STORAGE_GB={STORAGE_GB}")
     storage_utilization_chart.append([MONTH, STORAGE_GB])
 
 # HTML and JavaScript for report
@@ -156,22 +143,23 @@ with open(REPORT_OUTPUT, 'w') as file:
 # Notify user
 print(f"Backup report has been generated and saved to {REPORT_OUTPUT}")
 
-# Send Email using alternative method in case localhost SMTP is unavailable
+# Send Email using ssmtp
 def send_email():
-    # Email configuration
-    to_addr = "yvette.halili@telusinternational.com"
-    from_addr = "no-reply@telusinternational.com"
-    subject = "Daily Backup Report - November 2024"
+    # Configure email header and content
+    email_content = f"""
+To: yvette.halili@telusinternational.com
+From: no-reply@telusinternational.com
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Subject: Daily Backup Report - November 2024
 
-    msg = MIMEMultipart()
-    msg['From'] = from_addr
-    msg['To'] = to_addr
-    msg['Subject'] = subject
-    msg.attach(MIMEText(HTML_HEAD, 'html'))
+{HTML_HEAD}
+    """
 
+    # Execute ssmtp command
     try:
-        with smtplib.SMTP('localhost') as server:
-            server.sendmail(from_addr, to_addr, msg.as_string())
+        process = subprocess.Popen(['/usr/sbin/sendmail', '-t'], stdin=subprocess.PIPE)
+        process.communicate(email_content.encode('utf-8'))
         print("Email sent to yvette.halili@telusinternational.com")
     except Exception as e:
         print(f"Failed to send email: {e}")
@@ -181,4 +169,3 @@ send_email()
 # Close DB connection
 cursor.close()
 db_conn.close()
-
