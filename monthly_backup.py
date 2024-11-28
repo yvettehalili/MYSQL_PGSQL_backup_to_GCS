@@ -173,4 +173,3 @@ send_email()
 # Close DB connection
 cursor.close()
 db_conn.close()
-
