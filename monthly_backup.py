@@ -17,9 +17,9 @@ BACKUP_DIR = "/backup"
 DAILY_BACKUP_LOGS_FILE = os.path.join(BACKUP_DIR, "daily_backup_logs.txt")
 REPORT_OUTPUT = os.path.join(BACKUP_DIR, "backup_report_2024.html")
 
-# SQL Query
+# SQL Query to include the state field
 DAILY_BACKUP_LOGS_QUERY = f"""
-SELECT backup_date, server, size 
+SELECT backup_date, server, size, state
 FROM daily_log 
 WHERE backup_date BETWEEN '{START_DATE}' AND '{END_DATE}';
 """
@@ -42,7 +42,7 @@ failed_count = 0
 
 # Function to parse and aggregate data
 for row in data:
-    DATE, SERVER, SIZE = row
+    DATE, SERVER, SIZE, STATE = row
     DATE = str(DATE)
 
     # Strip the time part correctly and keep the date only
@@ -55,11 +55,11 @@ for row in data:
         # Sum storage per month
         storage_utilization[MONTH] = storage_utilization.get(MONTH, 0) + SIZE
 
-        # Backup status overview
-        if SIZE == 0:
-            failed_count += 1
-        else:
+        # Backup status overview checking state
+        if STATE == "Completed":
             successful_count += 1
+        elif STATE == "Error":
+            failed_count += 1
     else:
         print(f"Warning: Invalid SIZE value encountered: {SIZE} on {DATE} for {SERVER}")
 
@@ -72,7 +72,7 @@ for MONTH in MONTHS:
     STORAGE_GB = round(STORAGE_BYTES / 1073741824, 2)
     storage_utilization_chart.append([MONTH, STORAGE_GB])
 
-# HTML and JavaScript for report
+# HTML and JavaScript for the report
 HTML_HEAD = f"""
 <!DOCTYPE html>
 <html lang='en'>
@@ -101,7 +101,7 @@ HTML_HEAD = f"""
             ]);
             var options = {{
                 title: 'Backup Status Overview',
-                colors: ['#4B286D', '#63A74A'],
+                colors: ['#4B286D', '#E53935'],
                 backgroundColor: '#ffffff',
                 titleTextStyle: {{ color: '#6C77A1' }}
             }};
@@ -111,7 +111,7 @@ HTML_HEAD = f"""
         function drawStorageUtilizationChart() {{
             var data = google.visualization.arrayToDataTable({storage_utilization_chart});
             var options = {{
-                title: 'Storage Utilization (Monthly) from Jan 2024 to Oct 2024',
+                title: 'Storage Utilization (Monthly) from Jan 2024 to Nov 2024',
                 colors: ['#63A74A'],
                 backgroundColor: '#ffffff',
                 titleTextStyle: {{ color: '#6C77A1' }},
@@ -126,8 +126,8 @@ HTML_HEAD = f"""
     </script>
 </head>
 <body>
-<h1 align='center'>Backup Report - Jan 2024 to Oct 2024</h1>
-<p>This report provides an overview of the backup activities from January 2024 to October 2024.</p>
+<h1 align='center'>Backup Report - Jan 2024 to Nov 2024</h1>
+<p>This report provides an overview of the backup activities from January 2024 to November 2024.</p>
 <div class='chart-container'>
     <div id='backup_status_overview_chart' class='chart'></div>
     <div id='storage_utilization_chart' class='chart'></div>
@@ -147,24 +147,26 @@ print(f"Backup report has been generated and saved to {REPORT_OUTPUT}")
 with open(REPORT_OUTPUT, 'r') as file:
     html_report_content = file.read()
 
-# Send Email using ssmtp
+# Send Email using `ssmtp`
 def send_email():
+    email_recipient = "yvette.halili@telusinternational.com"
+    email_subject = "November 2024 Backup Report"
+    
     # Configure email header and content
-    email_content = f"""
-To: yvette.halili@telusinternational.com
+    email_content = f"""To: {email_recipient}
 From: no-reply@telusinternational.com
+Subject: {email_subject}
 MIME-Version: 1.0
-Content-Type: text/html; charset=utf-8
-Subject: Daily Backup Report - November 2024
+Content-Type: text/html
 
 {html_report_content}
     """
 
-    # Execute ssmtp command
+    # Execute `ssmtp` command
     try:
         process = subprocess.Popen(['/usr/sbin/sendmail', '-t'], stdin=subprocess.PIPE)
         process.communicate(email_content.encode('utf-8'))
-        print("Email sent to yvette.halili@telusinternational.com")
+        print(f"Email sent to {email_recipient}")
     except Exception as e:
         print(f"Failed to send email: {e}")
 
