@@ -1,6 +1,5 @@
 import os
 import subprocess
-import sys
 import smtplib
 import datetime
 from email.mime.multipart import MIMEMultipart
@@ -19,7 +18,7 @@ def activate_virtualenv():
 # Call the virtual environment activation function
 activate_virtualenv()
 
-# Import modules that should be available in the virtual environment
+# Import necessary packages
 import mysql.connector
 
 # Database Credentials
