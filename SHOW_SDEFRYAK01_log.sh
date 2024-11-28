@@ -28,7 +28,7 @@ echo "Mounting bucket"
 gcsfuse --key-file="$KEY_FILE" "$BUCKET" "$STORAGE" || { echo "Error mounting gcsfuse"; exit 1; }
 
 echo "============================================================================================================"
-echo "CHECKING BACKUPS FROM NOVEMBER 1 TO NOVEMBER 17, 2024 ......................................................"
+echo "CHECKING ALL AVAILABLE BACKUPS ............................................................................"
 echo "============================================================================================================"
 
 echo "============================================================================================================"
@@ -56,52 +56,35 @@ else
 
     if [[ -z "$DB_FOLDERS" ]]; then
         echo "No database folders found under gs://$BUCKET/$SERVER_BACKUP_PATH"
-    else
-        START_DATE="2024-11-01"
-        END_DATE="2024-11-17"
-        CURRENT_DATE="$START_DATE"
+    else    
+        for DB_FOLDER in $DB_FOLDERS; do
+            DB_NAME=$(basename "$DB_FOLDER")
+            DB_FULL_PATH="gs://${BUCKET}/${SERVER_BACKUP_PATH}${DB_NAME}/FULL/"
 
-        while [[ "$CURRENT_DATE" < "2024-11-18" ]]; do
-            echo "Checking backups for DATE: $CURRENT_DATE"
-            TEST_DATE=$(date -d "$CURRENT_DATE" +"%Y-%m-%d")
-            TEST_DATE2=$(date -d "$CURRENT_DATE" +"%Y%m%d")
-            TEST_DATE3=$(date -d "$CURRENT_DATE" +"%d-%m-%Y")
-            
-            for DB_FOLDER in $DB_FOLDERS; do
-                DB_NAME=$(basename "$DB_FOLDER")
-                DB_FULL_PATH="gs://${BUCKET}/${SERVER_BACKUP_PATH}${DB_NAME}/FULL/"
+            echo "Checking FULL directory: ${DB_FULL_PATH}"
 
-                for DATE in "$TEST_DATE" "$TEST_DATE2" "$TEST_DATE3"; do
-                    echo "Checking FULL directory: ${DB_FULL_PATH}"
+            # Aggregate file lists from FULL directory
+            FULL_FILES=$(gsutil ls "${DB_FULL_PATH}*.bak" 2>/dev/null)
+            echo "FULL_FILES output: $FULL_FILES"
 
-                    # Aggregate file lists from FULL directory
-                    FULL_FILES=$(gsutil ls "${DB_FULL_PATH}/*${DATE}*.bak" 2>/dev/null)
-                    echo "FULL_FILES output: $FULL_FILES"
+            if [[ -n "$FULL_FILES" ]]; then
+                echo "Found backup files: $FULL_FILES"
 
-                    if [[ -n "$FULL_FILES" ]]; then
-                        echo "Found backup files: $FULL_FILES"
+                for FILE in $FULL_FILES; do
+                    fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
+                    SIZE=$((SIZE + fsize))
 
-                        for FILE in $FULL_FILES; do
-                            fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
-                            SIZE=$((SIZE + fsize))
+                    # Extract filename from the full file path
+                    FILENAME=$(basename "$FILE")
+                    FILENAMES+=("$FILENAME")
 
-                            # Extract filename from the full file path
-                            FILENAME=$(basename "$FILE")
-                            FILENAMES+=("$FILENAME")
-
-                            echo "Backup details - Server: $SERVER, Database: $DB_NAME, Filename: $FILENAME, Filesize: $fsize, Path: $FILE"
-                        done
-                        STATE="Completed"
-                        break
-                    else
-                        echo "No backup files found for date: $DATE in ${DB_FULL_PATH}"
-                        STATE="Error"
-                    fi
+                    echo "Backup details - Server: $SERVER, Database: $DB_NAME, Filename: $FILENAME, Filesize: $fsize, Path: $FILE"
                 done
-            done
-
-            # Move to the next date
-            CURRENT_DATE=$(date -I -d "$CURRENT_DATE + 1 day")
+                STATE="Completed"
+            else
+                echo "No backup files found in ${DB_FULL_PATH}"
+                STATE="Error"
+            fi
         done
     fi
 fi
