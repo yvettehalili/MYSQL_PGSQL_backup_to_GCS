@@ -1,23 +1,26 @@
 import os
 import subprocess
-import mysql.connector
-import datetime
+import sys
 import smtplib
+import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 # Activate the virtual environment
 def activate_virtualenv():
     try:
-        os.chdir('/backup/environments')
-        # Note: `source` is a shell built-in and requires a shell=True in subprocess for proper execution
-        subprocess.call('. /backup/environments/backupv1/bin/activate', shell=True)
+        virtualenv_path = '/backup/environments/backupv1/bin/activate_this.py'
+        with open(virtualenv_path) as f:
+            exec(f.read(), dict(__file__=virtualenv_path))
         print("Virtual environment activated.")
     except Exception as e:
         print(f"Failed to activate virtual environment: {e}")
 
 # Call the virtual environment activation function
 activate_virtualenv()
+
+# Import modules that should be available in the virtual environment
+import mysql.connector
 
 # Database Credentials
 DB_USER = "trtel.backup"
@@ -171,7 +174,7 @@ def send_email():
     # Email configuration
     to_addr = "yvette.halili@telusinternational.com"
     from_addr = "no-reply@telusinternational.com"
-    subject = "Monthly Backup Report - November 2024"
+    subject = "Daily Backup Report - November 2024"
 
     msg = MIMEMultipart()
     msg['From'] = from_addr
