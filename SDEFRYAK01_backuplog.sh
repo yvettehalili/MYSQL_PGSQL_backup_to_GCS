@@ -47,9 +47,6 @@ SIZE=0
 FILENAMES=()
 STATE="Completed"
 
-# Fetch the current date
-CURRENT_DATE=$(date +"%Y-%m-%d")
-
 # List all database directories under the server
 echo "Listing all subdirectories (databases) under gs://$BUCKET/$SERVER_BACKUP_PATH"
 DB_FOLDERS=$(gsutil ls "gs://$BUCKET/$SERVER_BACKUP_PATH" 2>&1)
@@ -86,16 +83,20 @@ else
                     FILENAME=$(basename "$FILE")
                     FILENAMES+=("$FILENAME")
 
-                    # Extract database name from filename
-                    if [[ "$FILENAME" =~ ^sinch-db-cluster\.ti\.ads\$SinchAG.*_(.*)_FULL_.*\.bak$ ]]; then
-                        DB_NAME="${BASH_REMATCH[1]}"
+                    # Extract database name and date from filename
+                    if [[ "$FILENAME" =~ ^sinch-db-cluster\.ti\.ads\$SinchAG(.*)_(.*)_FULL_([0-9]{8})_([0-9]{6})\.bak$ ]]; then
+                        DB_NAME="${BASH_REMATCH[2]}"
+                        BACKUP_DATE="${BASH_REMATCH[3]}"
+                        BACKUP_DATETIME="${BASH_REMATCH[3]} ${BASH_REMATCH[4]}"
                     fi
 
-                    echo "Backup details - Server: $SERVER, Database: $DB_NAME, Filename: $FILENAME, Filesize: $fsize, Path: $FILE"
+                    BACKUP_DATE_FORMATTED=$(date -d "$BACKUP_DATETIME" +"%Y-%m-%d %H:%M:%S")
+
+                    echo "Backup details - Server: $SERVER, Database: $DB_NAME, Filename: $FILENAME, Filesize: $fsize, Path: $FILE, Backup Date: $BACKUP_DATE_FORMATTED"
 
                     # Insert details into the backup log
                     SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath, last_update) 
-                            VALUES ('$CURRENT_DATE','$SERVER',$fsize,'$FILE', NOW())
+                            VALUES ('$BACKUP_DATE_FORMATTED','$SERVER',$fsize,'$FILE', NOW())
                             ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize;"
                     echo "Inserting into backup_log: \"$SQUERY\""
                     mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$SQUERY"
@@ -108,7 +109,7 @@ else
 
                     # Insert each file's detail into the daily log with the backup status
                     DQUERY="INSERT INTO daily_log (backup_date, server, \`database\`, size, state, last_update, fileName) 
-                            VALUES ('$CURRENT_DATE', '$SERVER', '$DB_NAME', $fsize, '$STATE', '$endcopy', '$FILENAME');"
+                            VALUES ('$BACKUP_DATE_FORMATTED', '$SERVER', '$DB_NAME', $fsize, '$STATE', '$endcopy', '$FILENAME');"
                     echo "Inserting into daily_log: \"$DQUERY\""
                     mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$DQUERY"
                 done
