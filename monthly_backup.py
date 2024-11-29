@@ -22,10 +22,11 @@ REPORT_OUTPUT = os.path.join(BACKUP_DIR, "backup_report_2024.html")
 # Chart Images
 STATUS_CHART_IMAGE = os.path.join(BACKUP_DIR, "status_chart.png")
 UTILIZATION_CHART_IMAGE = os.path.join(BACKUP_DIR, "utilization_chart.png")
+DATABASE_COUNT_CHART_IMAGE = os.path.join(BACKUP_DIR, "database_count_chart.png")
 
 # SQL Query to include the state field
 DAILY_BACKUP_LOGS_QUERY = f"""
-SELECT backup_date, server, size, state
+SELECT backup_date, server, size, state, database
 FROM daily_log 
 WHERE backup_date BETWEEN '{START_DATE}' AND '{END_DATE}';
 """
@@ -43,12 +44,13 @@ data = cursor.fetchall()
 
 # Initialize data aggregation variables
 storage_utilization = {}
+database_count = {}
 successful_count = 0
 failed_count = 0
 
 # Function to parse and aggregate data
 for row in data:
-    DATE, SERVER, SIZE, STATE = row
+    DATE, SERVER, SIZE, STATE, DATABASE = row
     DATE = str(DATE)
 
     # Strip the time part correctly and keep the date only
@@ -61,6 +63,11 @@ for row in data:
         # Sum storage per month
         storage_utilization[MONTH] = storage_utilization.get(MONTH, 0) + SIZE
 
+        # Count unique databases per month
+        if MONTH not in database_count:
+            database_count[MONTH] = set()
+        database_count[MONTH].add(DATABASE)
+
         # Backup status overview checking state
         if STATE == "Completed":
             successful_count += 1
@@ -69,8 +76,11 @@ for row in data:
     else:
         print(f"Warning: Invalid SIZE value encountered: {SIZE} on {DATE} for {SERVER}")
 
+# Convert database count from set to length
+database_count = {month: len(databases) for month, databases in database_count.items()}
+
 # Generate and save the Backup Status Overview chart
-plt.figure(figsize=(6, 6))
+plt.figure(figsize=(10, 6))
 labels = ['Successful', 'Failed']
 sizes = [successful_count, failed_count]
 colors = ['#4B286D', '#E53935']
@@ -84,7 +94,7 @@ months = ["2024-01", "2024-02", "2024-03", "2024-04", "2024-05", "2024-06", "202
 utilization_gb = [round(storage_utilization.get(month, 0) / 1073741824, 2) for month in months]
 
 plt.figure(figsize=(10, 6))
-plt.plot(months, utilization_gb, marker='o', color='#63A74A')
+plt.bar(months, utilization_gb, color='#63A74A')
 plt.title('Storage Utilization (Monthly) from Jan 2024 to Nov 2024')
 plt.xlabel('Month')
 plt.ylabel('Storage Utilization (GB)')
@@ -92,12 +102,39 @@ plt.grid(True)
 plt.savefig(UTILIZATION_CHART_IMAGE)
 plt.close()
 
+# Generate and save the Unique Database Count chart
+unique_db_count = [database_count.get(month, 0) for month in months]
+
+plt.figure(figsize=(10, 6))
+plt.plot(months, unique_db_count, marker='o', color='#4B286D')
+plt.title('Unique Database Backups per Month from Jan 2024 to Nov 2024')
+plt.xlabel('Month')
+plt.ylabel('Unique Database Count')
+plt.grid(True)
+plt.savefig(DATABASE_COUNT_CHART_IMAGE)
+plt.close()
+
+# Summary card as a visual report using matplotlib
+total_backups = successful_count + failed_count
+
+fig, ax = plt.subplots()
+ax.set_xlim(0, 10)
+ax.set_ylim(0, 10)
+ax.text(0.5, 9, "Backup Summary", fontsize=15, weight='bold', ha='center')
+ax.text(0.5, 6, f"Total Backups: {total_backups}", fontsize=12, ha='center')
+ax.text(0.5, 4, f"Successful Backups: {successful_count}", fontsize=12, ha='center', color='#4B286D')
+ax.text(0.5, 2, f"Failed Backups: {failed_count}", fontsize=12, ha='center', color='#E53935')
+ax.axis('off')
+summary_chart_image = os.path.join(BACKUP_DIR, "summary_chart.png")
+plt.savefig(summary_chart_image)
+plt.close()
+
 # Helper function to read and encode image to base64
 def encode_image_to_base64(image_path):
     with open(image_path, 'rb') as img_file:
         return base64.b64encode(img_file.read()).decode('utf-8')
 
-# HTML for report with embedded images and summary card
+# HTML for report with embedded images
 HTML_HEAD = f"""
 <!DOCTYPE html>
 <html lang='en'>
@@ -112,7 +149,7 @@ HTML_HEAD = f"""
         h2 {{ color: #6C77A1; }}
         .chart-container {{ display: flex; justify-content: space-around; flex-wrap: wrap; }}
         .chart {{ width: 45%; min-width: 300px; height: 400px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); background-color: #fff; padding: 20px; border-radius: 10px; }}
-        .summary-card {{ text-align: center; margin-top: 20px; padding: 20px; background-color: #fff; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); border-radius: 10px; }}
+        .summary-card {{ text-align: center; width: 100%; margin-top: 20px; padding: 20px; background-color: #fff; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); border-radius: 10px; }}
         footer {{ font-size: 12px; color: purple; text-align: center; margin-top: 20px; }}
         img {{ width: 100%; height: auto; }}
     </style>
@@ -121,10 +158,8 @@ HTML_HEAD = f"""
 <h1>Backup Report - Jan 2024 to Nov 2024</h1>
 <p style="text-align: center;">This report provides an overview of the backup activities from January 2024 to November 2024.</p>
 
-<div class="summary-card">
-    <p><strong>Total Backups:</strong> {successful_count + failed_count}</p>
-    <p><strong>Successful Backups:</strong> {successful_count}</p>
-    <p><strong>Failed Backups:</strong> {failed_count}</p>
+<div class='summary-card'>
+    <img src="cid:summary_chart" alt="Summary Chart">
 </div>
 
 <div class='chart-container'>
@@ -135,6 +170,10 @@ HTML_HEAD = f"""
     <div class='chart'>
         <h2>Storage Utilization (Monthly)</h2>
         <img src="cid:utilization_chart" alt="Utilization Chart">
+    </div>
+    <div class='chart'>
+        <h2>Unique Databases Backed Up Monthly</h2>
+        <img src="cid:database_count_chart" alt="Database Count Chart">
     </div>
 </div>
 
@@ -177,6 +216,13 @@ Content-Type: text/html; charset="UTF-8"
 --{boundary}
 Content-Type: image/png
 Content-Transfer-Encoding: base64
+Content-ID: <summary_chart>
+
+{encode_image_to_base64(summary_chart_image)}
+
+--{boundary}
+Content-Type: image/png
+Content-Transfer-Encoding: base64
 Content-ID: <status_chart>
 
 {encode_image_to_base64(STATUS_CHART_IMAGE)}
@@ -187,6 +233,13 @@ Content-Transfer-Encoding: base64
 Content-ID: <utilization_chart>
 
 {encode_image_to_base64(UTILIZATION_CHART_IMAGE)}
+
+--{boundary}
+Content-Type: image/png
+Content-Transfer-Encoding: base64
+Content-ID: <database_count_chart>
+
+{encode_image_to_base64(DATABASE_COUNT_CHART_IMAGE)}
 --{boundary}--
 """
 
