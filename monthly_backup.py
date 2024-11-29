@@ -91,7 +91,7 @@ unique_db_count = [database_backup_counts.get(month, 0) for month in months]
 
 plt.figure(figsize=(14, 8))
 plt.plot(months, unique_db_count, marker='o', color='#4B286D', linewidth=2, markersize=8)
-plt.fill_between(months, unique_db_count, color='#4B286D', alpha=0.1)
+plt.fill_between(months, unique_db_count, color='#5C3F86', alpha=0.1)
 plt.title('Monthly Database Backup Count from Jan 2024 to Nov 2024')
 plt.xlabel('Month')
 plt.ylabel('Unique Database Count')
@@ -167,7 +167,7 @@ HTML_HEAD = f"""
             margin-bottom: 40px;
             padding: 20px;
             border-radius: 15px;
-            background-color: #fff;
+            background-color: #f9f9f9;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
         }}
         footer {{
@@ -277,4 +277,3 @@ send_email()
 # Close DB connection
 cursor.close()
 db_conn.close()
-
