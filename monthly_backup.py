@@ -127,12 +127,12 @@ HTML_HEAD = f"""
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Backup Report</title>
     <style>
-        body {{ font-family: 'Segoe UI', Arial, sans-serif; background-color: #f4f4f4; padding: 20px; }}
-        h1, h2 {{ margin: 0 0 10px; padding-bottom: 5px; border-bottom: 2px solid #4B286D; }}
-        h1 {{ color: #4B286D; text-align: center; }}
-        h2 {{ color: #6C77A1; text-align: center; }}
-        .chart-container {{ display: flex; justify-content: center; flex-wrap: wrap; }}
-        .chart {{ width: 100%; max-width: 600px; margin: 10px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); background-color: #fff; padding: 20px; border-radius: 10px; }}
+        body {{ font-family: 'Segoe UI', Arial, sans-serif; background-color: #f4f4f4; padding: 0; margin: 0; }}
+        h1, h2 {{ margin: 20px 0; padding-bottom: 5px; border-bottom: 2px solid #4B286D; text-align: center; }}
+        h1 {{ color: #4B286D; }}
+        h2 {{ color: #6C77A1; }}
+        .chart-container {{ text-align: center; width: 100%; padding: 20px; box-sizing: border-box; }}
+        .chart {{ display: inline-block; width: 80%; max-width: 600px; margin-bottom: 40px; padding: 20px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); background-color: #fff; border-radius: 10px; }}
         footer {{ font-size: 14px; color: purple; text-align: center; margin-top: 20px; }}
         img {{ width: 100%; height: auto; }}
     </style>
@@ -147,12 +147,12 @@ HTML_HEAD = f"""
         <img src="cid:status_chart" alt="Status Chart">
     </div>
     <div class='chart'>
-        <h2>Monthly Database Backup Count</h2>
-        <img src="cid:database_count_chart" alt="Database Count Chart">
-    </div>
-    <div class='chart'>
         <h2>Backups by Server</h2>
         <img src="cid:backup_by_server_chart" alt="Backups by Server Chart">
+    </div>
+    <div class='chart'>
+        <h2>Monthly Database Backup Count</h2>
+        <img src="cid:database_count_chart" alt="Database Count Chart">
     </div>
 </div>
 
@@ -202,16 +202,16 @@ Content-ID: <status_chart>
 --{boundary}
 Content-Type: image/png
 Content-Transfer-Encoding: base64
-Content-ID: <database_count_chart>
+Content-ID: <backup_by_server_chart>
 
-{encode_image_to_base64(DATABASE_COUNT_CHART_IMAGE)}
+{encode_image_to_base64(BACKUP_BY_SERVER_CHART_IMAGE)}
 
 --{boundary}
 Content-Type: image/png
 Content-Transfer-Encoding: base64
-Content-ID: <backup_by_server_chart>
+Content-ID: <database_count_chart>
 
-{encode_image_to_base64(BACKUP_BY_SERVER_CHART_IMAGE)}
+{encode_image_to_base64(DATABASE_COUNT_CHART_IMAGE)}
 --{boundary}--
 """
 
@@ -228,4 +228,3 @@ send_email()
 # Close DB connection
 cursor.close()
 db_conn.close()
-
