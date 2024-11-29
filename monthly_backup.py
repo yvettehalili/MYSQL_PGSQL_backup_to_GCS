@@ -27,9 +27,9 @@ SUMMARY_CHART_IMAGE = os.path.join(BACKUP_DIR, "summary_chart.png")
 
 # SQL Query to include the state field
 DAILY_BACKUP_LOGS_QUERY = f"""
-SELECT backup_date, server, size, state, database
-FROM daily_log 
-WHERE backup_date BETWEEN '{START_DATE}' AND '{END_DATE}';
+SELECT `backup_date`, `server`, `size`, `state`, `database`
+FROM `daily_log`
+WHERE `backup_date` BETWEEN '{START_DATE}' AND '{END_DATE}';
 """
 
 # Connect to MySQL
@@ -45,7 +45,7 @@ data = cursor.fetchall()
 
 # Initialize data aggregation variables
 storage_utilization = {}
-database_count = {}
+database_backup_counts = {}  # {month: set of (server, database)}
 successful_count = 0
 failed_count = 0
 
@@ -64,10 +64,10 @@ for row in data:
         # Sum storage per month
         storage_utilization[MONTH] = storage_utilization.get(MONTH, 0) + SIZE
 
-        # Count unique databases per month
-        if MONTH not in database_count:
-            database_count[MONTH] = set()
-        database_count[MONTH].add(DATABASE)
+        # Count unique (server, database) pairs per month
+        if MONTH not in database_backup_counts:
+            database_backup_counts[MONTH] = set()
+        database_backup_counts[MONTH].add((SERVER, DATABASE))
 
         # Backup status overview checking state
         if STATE == "Completed":
@@ -76,9 +76,6 @@ for row in data:
             failed_count += 1
     else:
         print(f"Warning: Invalid SIZE value encountered: {SIZE} on {DATE} for {SERVER}")
-
-# Convert database count from set to length
-database_count = {month: len(databases) for month, databases in database_count.items()}
 
 # Generate and save the Backup Status Overview chart
 plt.figure(figsize=(10, 6))
@@ -104,7 +101,7 @@ plt.savefig(UTILIZATION_CHART_IMAGE)
 plt.close()
 
 # Generate and save the Unique Database Count chart
-unique_db_count = [database_count.get(month, 0) for month in months]
+unique_db_count = [len(database_backup_counts.get(month, set())) for month in months]
 
 plt.figure(figsize=(10, 6))
 plt.plot(months, unique_db_count, marker='o', color='#4B286D')
@@ -256,4 +253,3 @@ send_email()
 # Close DB connection
 cursor.close()
 db_conn.close()
-
