@@ -5,6 +5,7 @@ import mysql.connector
 import matplotlib.pyplot as plt
 import numpy as np
 import base64
+from matplotlib.patches import FancyBboxPatch
 
 # Database Credentials
 DB_USER = "trtel.backup"
@@ -116,20 +117,21 @@ ax.spines['right'].set_visible(False)
 ax.spines['left'].set_visible(False)
 ax.spines['bottom'].set_visible(False)
 
-# Add gradient fill to bars and rounding using patches
+# Enhance bars with rounded corners and gradient
 for bar in bars:
     grad = np.linspace(0, 1, 256)
     colors = plt.cm.plasma(grad)
     gradient = np.vstack((colors, colors))
-    ax.imshow(gradient, aspect='auto', extent=[bar.get_x(), bar.get_x() + bar.get_width(), bar.get_y(), bar.get_y() + bar.get_height()], zorder=1, alpha=0.6)
     bar.set_edgecolor((0.8, 0.8, 0.8, 0.5))
     bar.set_linewidth(1)
-    rect = patches.FancyBboxPatch(
+
+    # Create a rounded rectangle
+    rect = FancyBboxPatch(
         (bar.get_x(), bar.get_y()), bar.get_width(), bar.get_height(),
-        boxstyle="round,pad=0.3", edgecolor="none", linewidth=0,
-        facecolor=bar.get_facecolor(), fill=True)
+        boxstyle="round,pad=0.3,rounding_size=0.2", edgecolor=bar.get_edgecolor(), facecolor=bar.get_facecolor(), linewidth=0)
+    bar.set_visible(False)  # hide the original bar
+
     ax.add_patch(rect)
-    bar.set_visible(False)
 
 plt.tight_layout()
 plt.savefig(BACKUP_BY_SERVER_CHART_IMAGE)
