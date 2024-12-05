@@ -39,7 +39,7 @@ def export_to_gcs(instance_name, database_name, bucket_name):
 
     log_info(f"Exporting database: {database_name} to GCS path: {gcs_path}")
     export_command = [
-        "gcloud", "sql", "export", "sqlserver", instance_name,
+        "gcloud", "sql", "export", "bak", instance_name,
         gcs_path,
         "--database", database_name
     ]
