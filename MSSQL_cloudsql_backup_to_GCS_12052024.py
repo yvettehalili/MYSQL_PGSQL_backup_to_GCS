@@ -2,7 +2,6 @@ import os
 import datetime
 import logging
 import subprocess
-from google.cloud import storage
 
 # Configuration
 CONFIG_FILE = "/backup/configs/MSSQL_database_list.conf"
@@ -34,7 +33,7 @@ def export_to_gcs(instance_name, database_name, bucket_name):
     # Build the dynamic backup path
     backup_path = BACKUP_PATH_TEMPLATE.format(instance_name=instance_name, database_name=database_name)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_file_name = f"{instance_name}_{database_name}_FULL_{timestamp}.bak"
+    backup_file_name = f"{database_name}_FULL_{timestamp}.bak"
     gcs_path = f"gs://{bucket_name}/{backup_path}/{backup_file_name}"
 
     log_info(f"Exporting database: {database_name} to GCS path: {gcs_path}")
@@ -55,19 +54,24 @@ def export_to_gcs(instance_name, database_name, bucket_name):
         log_info(result.stdout)
     except subprocess.CalledProcessError as e:
         log_info(f"Error while exporting database {database_name}: {e.stderr}")
+        raise
 
 def main():
     log_info("================================== {} ============================================".format(current_date))
     log_info("==== Backup Process Started ====")
     log_info(f"Backing up CloudSQL Instance: {INSTANCE_NAME}")
 
-    databases = read_database_list(CONFIG_FILE)
-
-    for database in databases:
-        try:
-            export_to_gcs(INSTANCE_NAME, database, GCS_BUCKET_NAME)
-        except Exception as e:
-            log_info(f"Error while backing up database {database}: {str(e)}")
+    try:
+        databases = read_database_list(CONFIG_FILE)
+        for database in databases:
+            try:
+                export_to_gcs(INSTANCE_NAME, database, GCS_BUCKET_NAME)
+            except Exception as e:
+                log_info(f"Error while backing up database {database}: {str(e)}")
+    except FileNotFoundError:
+        log_info(f"Error: Configuration file not found at {CONFIG_FILE}")
+    except Exception as e:
+        log_info(f"Unexpected error occurred: {str(e)}")
 
     log_info("==== Backup Process Completed ====")
 
