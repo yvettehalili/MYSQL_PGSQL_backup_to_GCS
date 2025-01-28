@@ -4,7 +4,7 @@
 DB_USER="trtel.backup"
 DB_PASS="Telus2017#"
 DB_NAME="ti_db_inventory"
-REPORT_DATE=$(date -d 'yesterday' '+%Y-%m-%d')  # Set the report date to day-1 (yesterday)
+REPORT_DATE=$(date '+%Y-%m-%d')  # Set the report date to the current date
 DIR="backup"
 
 # Create Directory if not exists
@@ -75,9 +75,9 @@ appendSectionWithTable() {
 clear
 
 # Generate Queries
-queryMySQL="SELECT Server, size, size_name, Location, DB_engine, OS, backup_date FROM daily_backup_report WHERE DB_engine='MYSQL' AND Location='GCP' AND backup_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY);"
-queryPGSQL="SELECT Server, size, size_name, Location, DB_engine, OS, backup_date FROM daily_backup_report WHERE DB_engine='PGSQL' AND Location='GCP' AND backup_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY);"
-queryMSSQL="SELECT Server, size, size_name, Location, DB_engine, OS, backup_date FROM daily_backup_report WHERE DB_engine='MSSQL' AND Location='GCP' AND backup_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY);"
+queryMySQL="SELECT Server, size, size_name, Location, DB_engine, OS, backup_date FROM daily_backup_report WHERE DB_engine='MYSQL' AND Location='GCP' AND backup_date = CURDATE();"
+queryPGSQL="SELECT Server, size, size_name, Location, DB_engine, OS, backup_date FROM daily_backup_report WHERE DB_engine='PGSQL' AND Location='GCP' AND backup_date = CURDATE();"
+queryMSSQL="SELECT Server, size, size_name, Location, DB_engine, OS, backup_date FROM daily_backup_report WHERE DB_engine='MSSQL' AND Location='GCP' AND backup_date = CURDATE();"
 
 # Log the generated queries
 echo "Generated Queries:" >> "${LOG_FILE}"
