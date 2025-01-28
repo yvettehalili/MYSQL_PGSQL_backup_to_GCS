@@ -40,7 +40,7 @@ appendSectionWithTable() {
         echo "  <tbody>"
 
         local counter=1
-        mysql -u"${DB_USER}" -p"${DB_PASS}" -D"${DB_NAME}" -e "${query}" --batch --skip-column-names 2>>"${LOG_FILE}" | while IFS=$'\t' read -r Server size size_name Location DB_engine OS; do
+        mysql -u"${DB_USER}" -p"${DB_PASS}" -D"${DB_NAME}" -e "${query}" --batch --skip-column-names 2>>"${LOG_FILE}" | while IFS=$'\t' read -r Server size size_name Location DB_engine OS backup_date; do
             # Determine error status based on the size
             local error="No"
             if [[ "$size" == "0.00" && "$size_name" == "B" ]]; then
@@ -75,9 +75,9 @@ appendSectionWithTable() {
 clear
 
 # Generate Queries
-queryMySQL="SELECT * FROM daily_backup_report WHERE DB_engine='MYSQL' AND Location='GCP' AND backup_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY);"
-queryPGSQL="SELECT * FROM daily_backup_report WHERE DB_engine='PGSQL' AND Location='GCP' AND backup_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY);"
-queryMSSQL="SELECT * FROM daily_backup_report WHERE DB_engine='MSSQL' AND Location='GCP' AND backup_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY);"
+queryMySQL="SELECT Server, size, size_name, Location, DB_engine, OS, backup_date FROM daily_backup_report WHERE DB_engine='MYSQL' AND Location='GCP' AND backup_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY);"
+queryPGSQL="SELECT Server, size, size_name, Location, DB_engine, OS, backup_date FROM daily_backup_report WHERE DB_engine='PGSQL' AND Location='GCP' AND backup_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY);"
+queryMSSQL="SELECT Server, size, size_name, Location, DB_engine, OS, backup_date FROM daily_backup_report WHERE DB_engine='MSSQL' AND Location='GCP' AND backup_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY);"
 
 # Log the generated queries
 echo "Generated Queries:" >> "${LOG_FILE}"
