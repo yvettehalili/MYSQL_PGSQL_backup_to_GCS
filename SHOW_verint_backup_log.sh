@@ -93,24 +93,6 @@ do
                                 fi
 
                                 echo "Backup details - Server: $SERVER, Database: $DB_NAME, Filename: $FILENAME, Filesize: $fsize"
-
-                                # Echo the INSERT statements to check for errors
-                                SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath, last_update) 
-                                        VALUES ('$TARGET_DATE','$SERVER',$fsize,'$FILE', NOW())
-                                        ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize;"
-                                echo "Will insert into backup_log: \"$SQUERY\""
-
-                                endcopy=$(date +"%Y-%m-%d %H:%M:%S")
-                                STATE="Completed"
-
-                                if [ "$fsize" -eq 0 ]; then
-                                    STATE="Error"
-                                fi
-
-                                # Echo each file's detail with the backup status insert statement
-                                DQUERY="INSERT INTO daily_log (backup_date, server, \`database\`, size, state, last_update, fileName) 
-                                        VALUES ('$TARGET_DATE', '$SERVER', '$DB_NAME', $fsize, '$STATE', '$endcopy', '$FILENAME');"
-                                echo "Will insert into daily_log: \"$DQUERY\""
                             done
                         else
                             echo "No backup files found for date: $DATE in ${DB_PATH}"
