@@ -68,55 +68,54 @@ do
             TARGET_DATE=$(date -d "$START_DATE +$DAY days" +"%Y-%m-%d")
             DATE_FORMATTED1=$(date -d "$TARGET_DATE" +"%Y%m%d")
             DATE_FORMATTED2=$(date -d "$TARGET_DATE" +"%d-%m-%Y")
-            
+
             for DATE in "$TARGET_DATE" "$DATE_FORMATTED1" "$DATE_FORMATTED2"; do
                 # List all database directories under the server
                 for DB_FOLDER in $(gsutil ls "gs://$BUCKET/$BACKUP_PATH/" | grep '/$'); do
-                    DB_FULL_PATH="${DB_FOLDER}FULL/"
-                    DB_DIFF_PATH="${DB_FOLDER}DIFF/"
-                    echo "Checking FULL directory: ${DB_FULL_PATH}"
-                    echo "Checking DIFF directory: ${DB_DIFF_PATH}"
+                    for BACKUP_TYPE in "FULL" "DIFF"; do
+                        DB_PATH="${DB_FOLDER}${BACKUP_TYPE}/"
+                        echo "Checking ${BACKUP_TYPE} directory: ${DB_PATH}"
 
-                    # Aggregate file lists from FULL and DIFF directories
-                    FILES=$(gsutil ls "${DB_FULL_PATH}*${DATE}*.bak" 2>/dev/null)
-                    FILES+=$(gsutil ls "${DB_DIFF_PATH}*${DATE}*.bak" 2>/dev/null)
+                        FILES=$(gsutil ls "${DB_PATH}*${DATE}*.bak" 2>/dev/null)
 
-                    if [[ -n "$FILES" ]]; then
-                        echo "Found backup files: $FILES"
+                        if [[ -n "$FILES" ]]; then
+                            echo "Found backup files: $FILES"
 
-                        for FILE in $FILES; do
-                            fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
+                            for FILE in $FILES; do
+                                fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
+                                FILENAME=$(basename "$FILE")
 
-                            # Extract database name and filename from the full file path
-                            FILENAME=$(basename "$FILE")
+                                # Pattern for matching FULL and DIFF backups
+                                if [[ "$FILENAME" =~ ^${SERVER}_(.*)_(DIFF|FULL)_ ]]; then
+                                    DB_NAME="${BASH_REMATCH[1]}"
+                                else
+                                    DB_NAME=""
+                                fi
 
-                            if [[ "$FILENAME" =~ ^${SERVER}_(.*)_(DIFF|FULL)_(.*)\.bak$ ]]; then
-                                DB_NAME="${BASH_REMATCH[1]}"
-                            fi
+                                echo "Backup details - Server: $SERVER, Database: $DB_NAME, Filename: $FILENAME, Filesize: $fsize"
 
-                            echo "Backup details - Server: $SERVER, Database: $DB_NAME, Filename: $FILENAME, Filesize: $fsize, Path: $FILE"
+                                # Echo the INSERT statements to check for errors
+                                SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath, last_update) 
+                                        VALUES ('$TARGET_DATE','$SERVER',$fsize,'$FILE', NOW())
+                                        ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize;"
+                                echo "Will insert into backup_log: \"$SQUERY\""
 
-                            # Echo the INSERT statements to check for errors
-                            SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath, last_update) 
-                                    VALUES ('$TARGET_DATE','$SERVER',$fsize,'$FILE', NOW())
-                                    ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize;"
-                            echo "Will insert into backup_log: \"$SQUERY\""
+                                endcopy=$(date +"%Y-%m-%d %H:%M:%S")
+                                STATE="Completed"
 
-                            endcopy=$(date +"%Y-%m-%d %H:%M:%S")
-                            STATE="Completed"
+                                if [ "$fsize" -eq 0 ]; then
+                                    STATE="Error"
+                                fi
 
-                            if [ "$fsize" -eq 0 ]; then
-                                STATE="Error"
-                            fi
-
-                            # Echo each file's detail with the backup status insert statement
-                            DQUERY="INSERT INTO daily_log (backup_date, server, \`database\`, size, state, last_update, fileName) 
-                                    VALUES ('$TARGET_DATE', '$SERVER', '$DB_NAME', $fsize, '$STATE', '$endcopy', '$FILENAME');"
-                            echo "Will insert into daily_log: \"$DQUERY\""
-                        done
-                    else
-                        echo "No backup files found for date: $DATE in ${DB_FULL_PATH} and ${DB_DIFF_PATH}"
-                    fi
+                                # Echo each file's detail with the backup status insert statement
+                                DQUERY="INSERT INTO daily_log (backup_date, server, \`database\`, size, state, last_update, fileName) 
+                                        VALUES ('$TARGET_DATE', '$SERVER', '$DB_NAME', $fsize, '$STATE', '$endcopy', '$FILENAME');"
+                                echo "Will insert into daily_log: \"$DQUERY\""
+                            done
+                        else
+                            echo "No backup files found for date: $DATE in ${DB_PATH}"
+                        fi
+                    done
                 done
                 if [[ -n "$FILES" ]]; then
                     break
