@@ -9,9 +9,9 @@
 
 # Ensure required commands are available
 command -v gcsfuse >/dev/null 2>&1 || { echo >&2 "gcsfuse command not found. Please install gcsfuse."; exit 1; }
-command -v fusermount >/dev/null 2>& 1 || { echo >&2 "fusermount command not found. Please install fuse."; exit 1; }
-command -v mysql >/dev/null 2>& 1 || { echo >&2 "mysql command not found. Please install mysql client."; exit 1; }
-command -v gsutil >/dev/null 2>& 1 || { echo >&2 "gsutil command not found. Please install gsutil."; exit 1; }
+command -v fusermount >/dev/null 2>&1 || { echo >&2 "fusermount command not found. Please install fuse."; exit 1; }
+command -v mysql >/dev/null 2>&1 || { echo >&2 "mysql command not found. Please install mysql client."; exit 1; }
+command -v gsutil >/dev/null 2>&1 || { echo >&2 "gsutil command not found. Please install gsutil."; exit 1; }
 
 # Database Credentials
 DB_USER="trtel.backup"
@@ -74,9 +74,9 @@ do
     SIZE=0
     FILENAMES=()
     STATE="Completed"
+    BACKUP_FOUND=false
 
     # List all database directories under the server
-    echo "Listing all subdirectories (databases) under gs://$BUCKET/$SERVER_BACKUP_PATH"
     DB_FOLDERS=$(gsutil ls "gs://$BUCKET/$SERVER_BACKUP_PATH" | grep '/$')
 
     if [[ -z "$DB_FOLDERS" ]]; then
@@ -88,56 +88,54 @@ do
         DB_NAME=$(basename "$DB_FOLDER")
 
         for DATE in "$CURRENT_DATE" "$TEST_DATE2" "$TEST_DATE3"; do
-            DB_FULL_PATH="${DB_FOLDER}FULL/"
-            DB_DIFF_PATH="${DB_FOLDER}DIFF/"
-            echo "Checking FULL directory: ${DB_FULL_PATH}"
-            echo "Checking DIFF directory: ${DB_DIFF_PATH}"
+            for TYPE in "FULL" "DIFF"; do
+                DB_PATH="${DB_FOLDER}${TYPE}/"
+                echo "Checking ${TYPE} directory: ${DB_PATH}"
 
-            # Aggregate file lists from FULL and DIFF directories
-            FULL_FILES=$(gsutil ls "${DB_FULL_PATH}*${DATE}*.bak" 2>/dev/null)
-            DIFF_FILES=$(gsutil ls "${DB_DIFF_PATH}*${DATE}*.bak" 2>/dev/null)
+                # Aggregate file lists from FULL and DIFF directories
+                FILES=$(gsutil ls "${DB_PATH}*${DATE}*.bak" 2>/dev/null)
 
-            if [[ -n "$FULL_FILES" ]] || [[ -n "$DIFF_FILES" ]]; then
-                FILES="$FULL_FILES $DIFF_FILES"
-                echo "Found backup files: $FILES"
+                if [[ -n "$FILES" ]]; then
+                    echo "Found backup files in ${TYPE} directory: $FILES"
+                    BACKUP_FOUND=true
 
-                for FILE in $FILES; do
-                    fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
-                    SIZE=$((SIZE + fsize))
+                    for FILE in $FILES; do
+                        fsize=$(gsutil du -s "$FILE" | awk '{print $1}')
+                        SIZE=$((SIZE + fsize))
 
-                    # Extract filename from the full file path
-                    FILENAME=$(basename "$FILE")
-                    FILENAMES+=("$FILENAME")
+                        # Extract filename from the full file path
+                        FILENAME=$(basename "$FILE")
+                        FILENAMES+=("$FILENAME")
 
-                    echo "Backup details - Server: $SERVER, Database: $DB_NAME, Filename: $FILENAME, Filesize: $fsize, Path: $FILE"
+                        echo "Backup details - Server: $SERVER, Database: $DB_NAME, Filename: $FILENAME, Filesize: $fsize, Path: $FILE"
 
-                    # Insert details into the backup log
-                    SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath, last_update) 
-                            VALUES ('$CURRENT_DATE','$SERVER',$fsize,'$FILE', NOW())
-                            ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize;"
-                    echo "Inserting into backup_log: \"$SQUERY\""
-                    mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$SQUERY"
+                        # Insert details into the backup log
+                        SQUERY="INSERT INTO backup_log (backup_date, server, size, filepath, last_update) 
+                                VALUES ('$CURRENT_DATE','$SERVER',$fsize,'$FILE', NOW())
+                                ON DUPLICATE KEY UPDATE last_update=NOW(), size=$fsize;"
+                        mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$SQUERY"
 
-                    endcopy=$(date +"%Y-%m-%d %H:%M:%S")
-                    STATE="Completed"
-                    if [[ "$SIZE" -eq 0 ]]; then
-                        STATE="Error"
-                    fi
+                        endcopy=$(date +"%Y-%m-%d %H:%M:%S")
+                        STATE="Completed"
+                        if [[ "$SIZE" -eq 0 ]]; then
+                            STATE="Error"
+                        fi
 
-                    # Insert each file's detail into the daily log with the backup status
-                    DQUERY="INSERT INTO daily_log (backup_date, server, \`database\`, size, state, last_update, fileName) 
-                            VALUES ('$CURRENT_DATE', '$SERVER', '$DB_NAME', $fsize, '$STATE', '$endcopy', '$FILENAME');"
-                    echo "Inserting into daily_log: \"$DQUERY\""
-                    mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$DQUERY"
-                done
-                STATE="Completed"
-                break
-            else
-                echo "No backup files found for date: $DATE in ${DB_FULL_PATH} and ${DB_DIFF_PATH}"
-                STATE="Error"
-            fi
+                        # Insert each file's detail into the daily log with the backup status
+                        DQUERY="INSERT INTO daily_log (backup_date, server, \`database\`, size, state, last_update, fileName) 
+                                VALUES ('$CURRENT_DATE', '$SERVER', '$DB_NAME', $fsize, '$STATE', '$endcopy', '$FILENAME');"
+                        mysql -u"$DB_USER" -p"$DB_PASS" $DB_MAINTENANCE -e "$DQUERY"
+                    done
+                else
+                    echo "No backup files found for date: $DATE in ${DB_PATH}"
+                fi
+            done
         done
     done
+
+    if [ "$BACKUP_FOUND" = false ]; then
+        echo "No backup files found for SERVER: $SERVER on DATE: $CURRENT_DATE"
+    fi
 done
 
 echo "Unmounting storage"
